@@ -1076,17 +1076,18 @@
       const loadSaved = () => {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
-          if (!raw) return { studied: {}, favorite: {}, showAllKo: true, showAllEn: true, rateIdx: 1 };
+          if (!raw) return { studied: {}, favorite: {}, showAllKo: true, showAllEn: true, rateIdx: 1, fsAutoplay: false };
           const parsed = JSON.parse(raw);
           return {
             studied: parsed.studied && typeof parsed.studied === "object" ? parsed.studied : {},
             favorite: parsed.favorite && typeof parsed.favorite === "object" ? parsed.favorite : {},
             showAllKo: typeof parsed.showAllKo === "boolean" ? parsed.showAllKo : true,
             showAllEn: typeof parsed.showAllEn === "boolean" ? parsed.showAllEn : true,
-            rateIdx: typeof parsed.rateIdx === "number" && RATES[parsed.rateIdx] ? parsed.rateIdx : 1
+            rateIdx: typeof parsed.rateIdx === "number" && RATES[parsed.rateIdx] ? parsed.rateIdx : 1,
+            fsAutoplay: parsed.fsAutoplay === true
           };
         } catch {
-          return { studied: {}, favorite: {}, showAllKo: true, showAllEn: true, rateIdx: 1 };
+          return { studied: {}, favorite: {}, showAllKo: true, showAllEn: true, rateIdx: 1, fsAutoplay: false };
         }
       };
 
@@ -1098,7 +1099,8 @@
             favorite: state.favorite,
             showAllKo: state.showAllKo,
             showAllEn: state.showAllEn,
-            rateIdx: state.rateIdx
+            rateIdx: state.rateIdx,
+            fsAutoplay: state.fsAutoplay
           }));
         } catch {}
       };
@@ -1124,7 +1126,8 @@
         installPrompt: null,
         fsOpen: false,
         fsIndex: 0,
-        fsAutoplay: false,
+        fsAutoplay: saved.fsAutoplay === true,
+        fsNeedAutoStart: false,
         fsAnimating: false,
         fsPushed: false
       };
@@ -1464,6 +1467,17 @@
         }
       }
 
+      function maybeStartFsAutoplay() {
+        if (!state.fsOpen || !state.fsAutoplay || !hasSpeech) return;
+        const lesson = currentOpenLesson();
+        const card = getFsCards(lesson)[state.fsIndex];
+        if (!card || !card.en) return;
+        const spoken = card.en;
+        window.setTimeout(() => {
+          if (state.fsOpen && state.fsAutoplay && !state.speaking) speakSingle(spoken);
+        }, 80);
+      }
+
       function showStudyUi() {
         window.scrollTo(0, 0);
         document.body.classList.add("fs-open");
@@ -1473,6 +1487,10 @@
         }
         renderFs(0);
         try { if (fs.root) fs.root.focus(); } catch {}
+        if (state.fsNeedAutoStart) {
+          state.fsNeedAutoStart = false;
+          maybeStartFsAutoplay();
+        }
       }
 
       function hideStudyUi() {
@@ -1498,6 +1516,7 @@
         if (state.speaking) stopSpeech();
         state.fsOpen = true;
         state.fsIndex = Math.max(0, Math.min(index || 0, cards.length - 1));
+        state.fsNeedAutoStart = true;
         writeStudySession();
         const loc = parseLocation();
         const url = lessonHash(state.openDate, state.fsIndex);
@@ -1653,6 +1672,7 @@
           "aria-pressed": "false",
           onClick: () => {
             state.fsAutoplay = !state.fsAutoplay;
+            saveState();
             fs.autoBtn.classList.toggle("is-on", state.fsAutoplay);
             fs.autoBtn.setAttribute("aria-pressed", state.fsAutoplay ? "true" : "false");
             if (state.fsAutoplay && !state.speaking) {
@@ -1951,6 +1971,7 @@
         state.openEn = {};
         if (keepFs && date) {
           state.fsOpen = true;
+          state.fsNeedAutoStart = true;
           const requested = opts && Number.isFinite(Number(opts.fsIndex)) ? Number(opts.fsIndex) : 0;
           const cards = getFsCards(state.lessons.find((d) => d.date === date));
           state.fsIndex = requested < 0 ? Math.max(0, cards.length - 1) : Math.max(0, Math.min(requested, Math.max(cards.length - 1, 0)));
@@ -2446,8 +2467,10 @@
           const lesson = state.lessons.find((d) => d.date === loc.date);
           if (lesson) {
             const last = Math.max(0, getFsCards(lesson).length - 1);
+            const wasOpen = Boolean(state.fsOpen && fs.root && fs.root.classList.contains("is-open"));
             state.fsOpen = true;
             state.fsIndex = Math.max(0, Math.min(loc.study, last));
+            if (!wasOpen) state.fsNeedAutoStart = true;
             const sess = readStudySession();
             if (sess && sess.date === loc.date) {
               if (sess.showAllKo != null && typeof state.showAllKo === "boolean" && allowSession) {
@@ -2475,6 +2498,7 @@
         if (!state.fsOpen || !fs.root || !fs.root.classList.contains("is-open")) {
           state.fsOpen = true;
           state.fsIndex = loc.study;
+          state.fsNeedAutoStart = true;
           writeStudySession();
           const url = lessonHash(loc.date, state.fsIndex);
           if (location.hash !== url) setLocation(url, "replace");
