@@ -433,6 +433,41 @@
       margin-bottom: 14px;
     }
 
+    .play-all-stopbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 80;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: calc(8px + env(safe-area-inset-top)) 16px 10px;
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .play-all-stopbar[hidden] {
+      display: none;
+    }
+
+    .play-all-stopbar-label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .play-all-stop-btn {
+      min-width: 132px;
+      padding: 10px 22px;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
     .btn {
       display: inline-flex;
       align-items: center;
@@ -1443,6 +1478,7 @@
         if (!lesson) return;
         const cards = getFsCards(lesson);
         if (!cards.length) return;
+        if (state.speaking) stopSpeech();
         state.fsOpen = true;
         state.fsIndex = Math.max(0, Math.min(index || 0, cards.length - 1));
         writeStudySession();
@@ -1737,6 +1773,7 @@
         }
         state.speaking = false;
         state.speakingLineIdx = -1;
+        syncPlayAllStopbar();
       }
 
       function pickVoice() {
@@ -1813,10 +1850,38 @@
         next();
       }
 
+      function syncPlayAllStopbar() {
+        let bar = document.getElementById("play-all-stopbar");
+        if (!bar) {
+          bar = el("div", {
+            id: "play-all-stopbar",
+            class: "play-all-stopbar",
+            hidden: true,
+            role: "status"
+          }, [
+            el("span", { class: "play-all-stopbar-label", text: "전체 듣기 중" }),
+            el("button", {
+              type: "button",
+              class: "btn btn-primary play-all-stop-btn",
+              text: "■ 중지",
+              "aria-label": "전체 듣기 중지",
+              onClick: () => {
+                stopSpeech();
+                updateSpeakingUI();
+              }
+            })
+          ]);
+          document.body.appendChild(bar);
+        }
+        const show = Boolean(state.speaking && state.speakingLineIdx >= 0 && !state.fsOpen);
+        bar.hidden = !show;
+      }
+
       function speakingChromeInsets() {
         let top = 0;
         let bottom = 0;
-        document.querySelectorAll(".detail-topbar, .bottom-bar").forEach((el) => {
+        document.querySelectorAll(".detail-topbar, .bottom-bar, .play-all-stopbar").forEach((el) => {
+          if (el.hidden) return;
           const pos = window.getComputedStyle(el).position;
           if (pos !== "fixed" && pos !== "sticky") return;
           const r = el.getBoundingClientRect();
@@ -1857,6 +1922,7 @@
           const idx = Number(node.getAttribute("data-line-idx"));
           node.classList.toggle("is-speaking", state.speaking && idx === state.speakingLineIdx);
         });
+        syncPlayAllStopbar();
         scrollSpeakingLineIntoView();
       }
 
@@ -2350,6 +2416,7 @@
             return;
           }
         }
+        if (state.speaking) stopSpeech();
         if (state.fsOpen) closeFullscreen({ silent: true, keepHash: true });
         renderHome();
       }
