@@ -1092,7 +1092,8 @@
         fsOpen: false,
         fsIndex: 0,
         fsAutoplay: false,
-        fsAnimating: false
+        fsAnimating: false,
+        fsPushed: false
       };
 
       const appEl = document.getElementById("app");
@@ -1277,6 +1278,98 @@
         root.style.setProperty("--fs-chrome-bottom", Math.max(bottomH, 0) + "px");
       }
 
+      const FS_SESSION_KEY = "travel-english-pwa-fs";
+      let locQuiet = false;
+
+      function parseLocation() {
+        const hash = location.hash || "";
+        let m = hash.match(/^#lesson=(\d{4}-\d{2}-\d{2})(?:&study=(\d+))?$/);
+        if (!m) m = hash.match(/^#lesson\/(\d{4}-\d{2}-\d{2})(?:\/study\/(\d+))?$/);
+        if (!m) return { date: null, study: null };
+        const study = m[2] != null ? parseInt(m[2], 10) : null;
+        return { date: m[1], study: Number.isFinite(study) ? study : null };
+      }
+
+      function lessonHash(date, study) {
+        if (!date) return location.pathname + location.search;
+        return study == null ? "#lesson=" + date : "#lesson=" + date + "&study=" + study;
+      }
+
+      function setLocation(url, mode) {
+        const current = url.charAt(0) === "#" ? location.hash : (location.pathname + location.search + location.hash);
+        if (mode !== "push" && current === url) return;
+        locQuiet = true;
+        try {
+          if (mode === "push") history.pushState({ study: /study/.test(url) }, "", url);
+          else history.replaceState({ study: /study/.test(url) }, "", url);
+        } finally {
+          locQuiet = false;
+        }
+      }
+
+      function writeStudySession() {
+        try {
+          if (state.fsOpen && state.openDate) {
+            sessionStorage.setItem(FS_SESSION_KEY, JSON.stringify({
+              date: state.openDate,
+              index: state.fsIndex,
+              showAllKo: state.showAllKo,
+              showAllEn: state.showAllEn
+            }));
+          } else {
+            sessionStorage.removeItem(FS_SESSION_KEY);
+          }
+        } catch {}
+      }
+
+      function readStudySession() {
+        try {
+          const raw = sessionStorage.getItem(FS_SESSION_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed.date !== "string") return null;
+          const index = Number(parsed.index);
+          return {
+            date: parsed.date,
+            index: Number.isFinite(index) ? index : 0,
+            showAllKo: typeof parsed.showAllKo === "boolean" ? parsed.showAllKo : null,
+            showAllEn: typeof parsed.showAllEn === "boolean" ? parsed.showAllEn : null
+          };
+        } catch {
+          return null;
+        }
+      }
+
+      function showStudyUi() {
+        window.scrollTo(0, 0);
+        document.body.classList.add("fs-open");
+        if (fs.root) {
+          fs.root.classList.add("is-open");
+          fs.root.setAttribute("aria-hidden", "false");
+        }
+        syncFsChromeInsets();
+        renderFs(0);
+        requestAnimationFrame(syncFsChromeInsets);
+        try { if (fs.root) fs.root.focus(); } catch {}
+      }
+
+      function hideStudyUi() {
+        state.fsOpen = false;
+        state.fsAnimating = false;
+        if (fs.animTimer) {
+          window.clearTimeout(fs.animTimer);
+          fs.animTimer = 0;
+        }
+        if (fs.root) {
+          fs.root.classList.remove("is-open");
+          fs.root.setAttribute("aria-hidden", "true");
+        }
+        document.body.classList.remove("fs-open");
+        document.documentElement.style.removeProperty("--fs-chrome-top");
+        document.documentElement.style.removeProperty("--fs-chrome-bottom");
+        writeStudySession();
+      }
+
       function openFullscreen(index) {
         const lesson = currentOpenLesson();
         if (!lesson) return;
@@ -1284,31 +1377,48 @@
         if (!cards.length) return;
         state.fsOpen = true;
         state.fsIndex = Math.max(0, Math.min(index || 0, cards.length - 1));
-        window.scrollTo(0, 0);
-        document.body.classList.add("fs-open");
-        syncFsChromeInsets();
-        fs.root.classList.add("is-open");
-        fs.root.setAttribute("aria-hidden", "false");
-        renderFs(0);
-        requestAnimationFrame(syncFsChromeInsets);
-        try { fs.root.focus(); } catch {}
+        writeStudySession();
+        const loc = parseLocation();
+        const url = lessonHash(state.openDate, state.fsIndex);
+        if (loc.date === state.openDate && loc.study != null) {
+          setLocation(url, "replace");
+        } else {
+          setLocation(url, "push");
+          state.fsPushed = true;
+        }
+        showStudyUi();
       }
 
       function closeFullscreen(opts) {
         const silent = opts && opts.silent;
-        if (!state.fsOpen && !fs.root.classList.contains("is-open")) return;
-        state.fsOpen = false;
-        state.fsAnimating = false;
-        if (fs.animTimer) {
-          window.clearTimeout(fs.animTimer);
-          fs.animTimer = 0;
+        const fromPop = opts && opts.fromPop;
+        const keepHash = opts && opts.keepHash;
+        const wasOpen = state.fsOpen || (fs.root && fs.root.classList.contains("is-open"));
+        if (!wasOpen) {
+          if (!keepHash && !fromPop) {
+            const loc = parseLocation();
+            if (loc.study != null) setLocation(lessonHash(loc.date || state.openDate, null), "replace");
+          }
+          writeStudySession();
+          if (!silent) render();
+          return;
         }
         stopSpeech();
-        fs.root.classList.remove("is-open");
-        fs.root.setAttribute("aria-hidden", "true");
-        document.body.classList.remove("fs-open");
-        document.documentElement.style.removeProperty("--fs-chrome-top");
-        document.documentElement.style.removeProperty("--fs-chrome-bottom");
+        hideStudyUi();
+        if (!fromPop && !keepHash) {
+          const loc = parseLocation();
+          if (loc.study != null) {
+            if (state.fsPushed) {
+              state.fsPushed = false;
+              locQuiet = true;
+              history.back();
+              window.setTimeout(() => { locQuiet = false; }, 0);
+            } else {
+              setLocation(lessonHash(state.openDate || loc.date, null), "replace");
+            }
+          }
+        }
+        if (!fromPop) state.fsPushed = false;
         if (!silent) render();
       }
 
@@ -1319,6 +1429,8 @@
         const next = state.fsIndex + dir;
         if (next < 0 || next >= cards.length) return;
         state.fsIndex = next;
+        writeStudySession();
+        setLocation(lessonHash(state.openDate, state.fsIndex), "replace");
         stopSpeech();
         renderFs(dir);
         if (state.fsAutoplay && hasSpeech) {
@@ -1705,19 +1817,22 @@
       function openLesson(date, opts) {
         const keepFs = Boolean(opts && opts.keepFs);
         stopSpeech();
-        if (state.fsOpen && !keepFs) closeFullscreen({ silent: true });
+        if (state.fsOpen && !keepFs) closeFullscreen({ silent: true, keepHash: true });
         state.openDate = date;
         state.openKo = {};
         state.openEn = {};
         if (keepFs && date) {
           state.fsOpen = true;
           state.fsIndex = 0;
+          writeStudySession();
         }
-        if (date) {
-          const target = "#lesson=" + date;
-          if (location.hash !== target) history.pushState(null, "", target);
-        } else if (location.hash) {
-          history.pushState(null, "", location.pathname + location.search);
+        const target = date ? lessonHash(date, keepFs ? 0 : null) : (location.pathname + location.search);
+        const atTarget = date ? location.hash === target : !location.hash;
+        if (!atTarget) {
+          setLocation(target, "push");
+          if (keepFs) state.fsPushed = true;
+        } else if (keepFs) {
+          setLocation(target, "replace");
         }
         window.scrollTo(0, 0);
         render();
@@ -2162,23 +2277,74 @@
           const found = state.lessons.find((d) => d.date === state.openDate);
           if (found) {
             renderDetail(found);
-            if (state.fsOpen) renderFs(0);
+            if (state.fsOpen) showStudyUi();
             return;
           }
         }
-        if (state.fsOpen) closeFullscreen({ silent: true });
+        if (state.fsOpen) closeFullscreen({ silent: true, keepHash: true });
         renderHome();
       }
 
-      function syncFromHash() {
-        const m = location.hash.match(/^#lesson=(\d{4}-\d{2}-\d{2})$/);
-        const next = m ? m[1] : null;
-        if (next !== state.openDate) {
+      function desiredLocation(allowSession) {
+        const loc = parseLocation();
+        if (loc.date && loc.study != null) return loc;
+        if (allowSession) {
+          const sess = readStudySession();
+          if (sess && sess.date && (!loc.date || sess.date === loc.date)) {
+            return { date: loc.date || sess.date, study: sess.index };
+          }
+        }
+        return loc;
+      }
+
+      function syncFromLocation(opts) {
+        if (locQuiet || state.loading) return;
+        const allowSession = Boolean(opts && opts.allowSession);
+        const loc = desiredLocation(allowSession);
+        if (loc.date !== state.openDate) {
           stopSpeech();
-          if (state.fsOpen) closeFullscreen({ silent: true });
-          state.openDate = next;
+          if (state.fsOpen && loc.study == null) hideStudyUi();
+          state.openDate = loc.date;
           state.openKo = {};
           state.openEn = {};
+          if (loc.study == null) state.fsPushed = false;
+        }
+        if (loc.date && loc.study != null) {
+          const lesson = state.lessons.find((d) => d.date === loc.date);
+          if (lesson) {
+            const last = Math.max(0, getFsCards(lesson).length - 1);
+            state.fsOpen = true;
+            state.fsIndex = Math.max(0, Math.min(loc.study, last));
+            const sess = readStudySession();
+            if (sess && sess.date === loc.date) {
+              if (sess.showAllKo != null && typeof state.showAllKo === "boolean" && allowSession) {
+                /* 가/A already come from localStorage; session is a backup if hash restore happens mid-session */
+              }
+            }
+            writeStudySession();
+            const url = lessonHash(state.openDate, state.fsIndex);
+            if (location.hash !== url) setLocation(url, "replace");
+          }
+        } else if (state.fsOpen) {
+          closeFullscreen({ silent: true, fromPop: true });
+        }
+        render();
+      }
+
+      function restoreStudyIfNeeded() {
+        if (locQuiet || state.loading || !state.lessons.length) return;
+        const loc = desiredLocation(true);
+        if (!loc.date || loc.study == null) return;
+        if (state.openDate !== loc.date) {
+          syncFromLocation({ allowSession: true });
+          return;
+        }
+        if (!state.fsOpen || !fs.root || !fs.root.classList.contains("is-open")) {
+          state.fsOpen = true;
+          state.fsIndex = loc.study;
+          writeStudySession();
+          const url = lessonHash(loc.date, state.fsIndex);
+          if (location.hash !== url) setLocation(url, "replace");
           render();
         }
       }
@@ -2192,8 +2358,7 @@
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           state.lessons = await res.json();
           state.loading = false;
-          syncFromHash();
-          render();
+          syncFromLocation({ allowSession: true });
         } catch (err) {
           state.loading = false;
           state.error = err && err.message ? err.message : String(err);
@@ -2201,7 +2366,12 @@
         }
       }
 
-      window.addEventListener("hashchange", syncFromHash);
+      window.addEventListener("hashchange", () => syncFromLocation());
+      window.addEventListener("popstate", () => syncFromLocation());
+      window.addEventListener("pageshow", () => restoreStudyIfNeeded());
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") restoreStudyIfNeeded();
+      });
       window.addEventListener("beforeinstallprompt", (e) => {
         e.preventDefault();
         state.installPrompt = e;
