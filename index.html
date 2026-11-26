@@ -920,26 +920,28 @@
 
     .fs-en {
       margin: 0;
-      font-size: clamp(1.32rem, 5vw, 2.05rem);
+      font-size: clamp(1.85rem, 7vw, 2.87rem);
       font-weight: 750;
-      line-height: 1.4;
-      max-width: 22em;
+      line-height: 1.35;
+      max-width: min(22em, 100%);
+      width: 100%;
+      padding: 0 4px;
+      overflow-wrap: break-word;
     }
 
     .fs-ko {
-      margin: 16px 0 0;
-      font-size: clamp(1rem, 3.4vw, 1.22rem);
+      margin: 14px 0 0;
+      font-size: clamp(0.94rem, 3.1vw, 1.15rem);
       color: var(--text-secondary);
       line-height: 1.5;
-      max-width: 24em;
+      max-width: min(24em, 100%);
+      width: 100%;
+      padding: 0 4px;
     }
 
-    .fs-actions {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: center;
+    .fs-bottom {
       gap: 8px;
+      width: 100%;
     }
 
     .fs-dock-progress {
@@ -952,7 +954,30 @@
     }
 
     .fs-actions {
+      display: flex;
       flex-wrap: nowrap;
+      align-items: stretch;
+      justify-content: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .fs-actions .btn,
+    .fs-actions .google-search-btn {
+      flex: 1;
+      height: 54px;
+      min-height: 54px;
+      padding: 0 12px;
+      font-size: 1.08rem;
+      font-weight: 700;
+      border-radius: var(--radius-md);
+      white-space: nowrap;
+    }
+
+    .fs-actions .google-search-btn {
+      color: var(--text);
+      background: var(--surface);
     }
 
     @media (max-width: 560px) {
@@ -1112,12 +1137,12 @@
         });
       }
 
-      function langText(tag, className, text, kind, key) {
+      function langText(tag, className, text, kind, key, opts) {
         const allOn = kind === "en" ? state.showAllEn : state.showAllKo;
         const opened = kind === "en" ? state.openEn : state.openKo;
         const visible = allOn || Boolean(opened[key]);
         const attrs = { class: className + (visible ? "" : " is-blurred"), text };
-        if (!allOn) {
+        if (!allOn && !(opts && opts.noToggle)) {
           attrs.onClick = (e) => {
             e.stopPropagation();
             if (opened[key]) delete opened[key];
@@ -1223,11 +1248,43 @@
 
       function buildFsCard(card) {
         const label = speakerLabel(card);
-        return el("div", { class: "fs-card" }, [
+        return el("div", {
+          class: "fs-card",
+          title: "탭해서 듣기",
+          "aria-label": "탭해서 듣기"
+        }, [
           label ? el("p", { class: "fs-speaker", text: label }) : null,
-          langText("p", "fs-en", card.en, "en", card.key),
-          card.ko ? langText("p", "fs-ko", card.ko, "ko", card.key) : null
+          langText("p", "fs-en", card.en, "en", card.key, { noToggle: true }),
+          card.ko ? langText("p", "fs-ko", card.ko, "ko", card.key, { noToggle: true }) : null
         ]);
+      }
+
+      function fitFsEnglish(cardEl) {
+        if (!cardEl) return;
+        const en = cardEl.querySelector(".fs-en");
+        if (!en) return;
+        en.style.fontSize = "";
+        const minPx = 20;
+        let size = parseFloat(window.getComputedStyle(en).fontSize) || 0;
+        let guard = 0;
+        while (cardEl.scrollHeight > cardEl.clientHeight + 1 && size > minPx && guard++ < 14) {
+          size *= 0.92;
+          en.style.fontSize = size + "px";
+        }
+      }
+
+      function playFsCard(card) {
+        if (!card) return;
+        if (!state.showAllEn) state.openEn[card.key] = true;
+        if (!state.showAllKo) state.openKo[card.key] = true;
+        if (fs.stage) {
+          fs.stage.querySelectorAll(".is-blurred").forEach((el) => {
+            el.classList.remove("is-blurred");
+            el.removeAttribute("aria-hidden");
+            el.removeAttribute("title");
+          });
+        }
+        if (hasSpeech && card.en) speakSingle(card.en);
       }
 
       const fs = {
@@ -1447,6 +1504,7 @@
           }
           state.fsAnimating = false;
           stage.replaceChildren(node);
+          fitFsEnglish(node);
           return;
         }
 
@@ -1454,6 +1512,7 @@
         node.classList.add(dir > 0 ? "is-from-right" : "is-from-left");
         current.classList.add(dir > 0 ? "is-to-left" : "is-to-right");
         stage.appendChild(node);
+        fitFsEnglish(node);
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             node.classList.add("is-in");
@@ -1546,11 +1605,13 @@
         document.body.appendChild(fs.root);
 
         const SWIPE_X = 56;
+        const TAP_MOVE = 14;
+        const TAP_MS = 500;
         let ptr = null;
         fs.stage.addEventListener("pointerdown", (e) => {
           if (e.button != null && e.button !== 0) return;
           if (e.target.closest("button, a")) return;
-          ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, locked: false };
+          ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), locked: false };
         });
         fs.stage.addEventListener("pointermove", (e) => {
           if (!ptr || e.pointerId !== ptr.id) return;
@@ -1566,11 +1627,18 @@
           if (!ptr || e.pointerId !== ptr.id) return;
           const dx = e.clientX - ptr.x;
           const dy = e.clientY - ptr.y;
+          const dt = Date.now() - ptr.t;
           const locked = ptr.locked;
           ptr = null;
-          if (!locked) return;
-          if (Math.abs(dx) >= SWIPE_X && Math.abs(dx) > Math.abs(dy)) {
-            moveFs(dx < 0 ? 1 : -1);
+          if (locked) {
+            if (Math.abs(dx) >= SWIPE_X && Math.abs(dx) > Math.abs(dy)) {
+              moveFs(dx < 0 ? 1 : -1);
+            }
+            return;
+          }
+          if (Math.hypot(dx, dy) < TAP_MOVE && dt < TAP_MS) {
+            const lesson = currentOpenLesson();
+            playFsCard(getFsCards(lesson)[state.fsIndex]);
           }
         };
         fs.stage.addEventListener("pointerup", endPtr);
