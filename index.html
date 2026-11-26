@@ -1336,15 +1336,6 @@
 
       function playFsCard(card) {
         if (!card) return;
-        if (!state.showAllEn) state.openEn[card.key] = true;
-        if (!state.showAllKo) state.openKo[card.key] = true;
-        if (fs.stage) {
-          fs.stage.querySelectorAll(".is-blurred").forEach((el) => {
-            el.classList.remove("is-blurred");
-            el.removeAttribute("aria-hidden");
-            el.removeAttribute("title");
-          });
-        }
         if (hasSpeech && card.en) speakSingle(card.en);
       }
 
