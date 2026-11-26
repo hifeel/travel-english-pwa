@@ -433,41 +433,6 @@
       margin-bottom: 14px;
     }
 
-    .play-all-stopbar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 80;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      padding: calc(8px + env(safe-area-inset-top)) 16px 10px;
-      background: color-mix(in srgb, var(--surface) 94%, transparent);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border);
-      box-shadow: var(--shadow-sm);
-    }
-
-    .play-all-stopbar[hidden] {
-      display: none;
-    }
-
-    .play-all-stopbar-label {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: var(--text-secondary);
-    }
-
-    .play-all-stop-btn {
-      min-width: 132px;
-      padding: 10px 22px;
-      font-size: 1rem;
-      font-weight: 700;
-    }
-
     .btn {
       display: inline-flex;
       align-items: center;
@@ -549,20 +514,26 @@
 
     .detail-toolbar {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      margin-top: 14px;
-      padding-top: 14px;
-      border-top: 1px solid var(--border);
+      gap: 8px;
+      position: sticky;
+      top: env(safe-area-inset-top, 0px);
+      z-index: 30;
+      margin: 0 -16px 14px;
+      padding: 8px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
     }
 
     .toolbar-left, .toolbar-right {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
       gap: 8px;
+      flex-shrink: 0;
     }
 
     .toggle-btn {
@@ -842,6 +813,7 @@
 
     /* Study view hides the lesson 목록 top bar and 이전/목록/다음 bottom nav */
     body.fs-open .detail-topbar,
+    body.fs-open .detail-toolbar,
     body.fs-open .bottom-bar {
       display: none;
     }
@@ -1053,7 +1025,13 @@
       }
 
       .detail-toolbar {
-        gap: 8px;
+        gap: 6px;
+      }
+
+      .detail-toolbar .btn {
+        padding: 6px 9px;
+        font-size: 0.8rem;
+        white-space: nowrap;
       }
 
       .toolbar-left,
@@ -1237,13 +1215,18 @@
         const allOn = kind === "en" ? state.showAllEn : state.showAllKo;
         const opened = kind === "en" ? state.openEn : state.openKo;
         const visible = allOn || Boolean(opened[key]);
-        const attrs = { class: className + (visible ? "" : " is-blurred"), text };
+        const attrs = {
+          class: className + (visible ? "" : " is-blurred"),
+          text,
+          "data-lang": kind,
+          "data-lang-key": key
+        };
         if (!allOn && !(opts && opts.noToggle)) {
           attrs.onClick = (e) => {
             e.stopPropagation();
             if (opened[key]) delete opened[key];
             else opened[key] = true;
-            render();
+            syncLangVisibility();
           };
           if (!visible) {
             attrs.title = "탭해서 이 문장만 보기";
@@ -1251,6 +1234,30 @@
           }
         }
         return el(tag, attrs);
+      }
+
+      function syncLangVisibility() {
+        document.querySelectorAll("[data-lang]").forEach((el) => {
+          const kind = el.getAttribute("data-lang");
+          const key = el.getAttribute("data-lang-key");
+          const allOn = kind === "en" ? state.showAllEn : state.showAllKo;
+          const opened = kind === "en" ? state.openEn : state.openKo;
+          const visible = allOn || Boolean(key && opened[key]);
+          el.classList.toggle("is-blurred", !visible);
+          if (!allOn && !visible) {
+            el.setAttribute("aria-hidden", "true");
+            el.title = "탭해서 이 문장만 보기";
+          } else {
+            el.removeAttribute("aria-hidden");
+            if (el.getAttribute("title") === "탭해서 이 문장만 보기") el.removeAttribute("title");
+          }
+        });
+        document.querySelectorAll(".toggle-btn.lang-toggle").forEach((btn) => {
+          const isKo = btn.getAttribute("aria-label") === "한국어 뜻 보이기";
+          const on = isKo ? state.showAllKo : state.showAllEn;
+          btn.classList.toggle("is-on", on);
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+        });
       }
 
       function langToggleButtons() {
@@ -1265,7 +1272,7 @@
               state.showAllKo = !state.showAllKo;
               state.openKo = {};
               saveState();
-              render();
+              syncLangVisibility();
             }
           }),
           el("button", {
@@ -1278,7 +1285,7 @@
               state.showAllEn = !state.showAllEn;
               state.openEn = {};
               saveState();
-              render();
+              syncLangVisibility();
             }
           })
         ];
@@ -1773,7 +1780,6 @@
         }
         state.speaking = false;
         state.speakingLineIdx = -1;
-        syncPlayAllStopbar();
       }
 
       function pickVoice() {
@@ -1850,37 +1856,10 @@
         next();
       }
 
-      function syncPlayAllStopbar() {
-        let bar = document.getElementById("play-all-stopbar");
-        if (!bar) {
-          bar = el("div", {
-            id: "play-all-stopbar",
-            class: "play-all-stopbar",
-            hidden: true,
-            role: "status"
-          }, [
-            el("span", { class: "play-all-stopbar-label", text: "전체 듣기 중" }),
-            el("button", {
-              type: "button",
-              class: "btn btn-primary play-all-stop-btn",
-              text: "■ 중지",
-              "aria-label": "전체 듣기 중지",
-              onClick: () => {
-                stopSpeech();
-                updateSpeakingUI();
-              }
-            })
-          ]);
-          document.body.appendChild(bar);
-        }
-        const show = Boolean(state.speaking && state.speakingLineIdx >= 0 && !state.fsOpen);
-        bar.hidden = !show;
-      }
-
       function speakingChromeInsets() {
         let top = 0;
         let bottom = 0;
-        document.querySelectorAll(".detail-topbar, .bottom-bar, .play-all-stopbar").forEach((el) => {
+        document.querySelectorAll(".detail-toolbar, .detail-topbar, .bottom-bar").forEach((el) => {
           if (el.hidden) return;
           const pos = window.getComputedStyle(el).position;
           if (pos !== "fixed" && pos !== "sticky") return;
@@ -1915,14 +1894,14 @@
       function updateSpeakingUI() {
         const playBtn = document.getElementById("play-all-btn");
         if (playBtn) {
-          playBtn.textContent = state.speaking ? "⏹ 정지" : "▶ 전체 듣기";
+          playBtn.textContent = state.speaking ? "■ 중지" : "▶ 전체 듣기";
+          playBtn.setAttribute("aria-label", state.speaking ? "전체 듣기 중지" : "전체 듣기");
         }
         setFsPlayIcon();
         document.querySelectorAll("[data-line-idx]").forEach((node) => {
           const idx = Number(node.getAttribute("data-line-idx"));
           node.classList.toggle("is-speaking", state.speaking && idx === state.speakingLineIdx);
         });
-        syncPlayAllStopbar();
         scrollSpeakingLineIntoView();
       }
 
@@ -2243,42 +2222,44 @@
             el("span", { text: lesson.dateLabel })
           ]),
           el("h1", { class: "detail-title", text: lesson.title }),
-          el("p", { class: "detail-intro", text: lesson.intro }),
-          el("div", { class: "detail-toolbar" }, [
-            el("div", { class: "toolbar-left" }, [
-              hasSpeech
-                ? el("button", {
-                    id: "play-all-btn",
-                    type: "button",
-                    class: "btn btn-primary",
-                    text: state.speaking ? "⏹ 정지" : "▶ 전체 듣기",
-                    onClick: () => speakDialogue(lesson.dialogue.map((l) => l.text))
-                  })
-                : null,
-              hasSpeech
-                ? el("button", {
-                    type: "button",
-                    class: "btn",
-                    text: `속도 ${RATES[state.rateIdx]}x`,
-                    onClick: () => {
-                      state.rateIdx = (state.rateIdx + 1) % RATES.length;
-                      saveState();
-                      render();
-                    }
-                  })
-                : null
-            ]),
-            el("div", { class: "toolbar-right toolbar-lang-row" }, [
-              el("button", {
-                type: "button",
-                class: "toggle-btn icon-only",
-                text: "⛶",
-                "aria-label": "전체화면",
-                title: "전체화면",
-                onClick: () => openFullscreen(0)
-              }),
-              ...langToggleButtons()
-            ])
+          el("p", { class: "detail-intro", text: lesson.intro })
+        ]);
+
+        const toolbar = el("div", { class: "detail-toolbar" }, [
+          el("div", { class: "toolbar-left" }, [
+            hasSpeech
+              ? el("button", {
+                  id: "play-all-btn",
+                  type: "button",
+                  class: "btn btn-primary",
+                  text: state.speaking ? "■ 중지" : "▶ 전체 듣기",
+                  "aria-label": state.speaking ? "전체 듣기 중지" : "전체 듣기",
+                  onClick: () => speakDialogue(lesson.dialogue.map((l) => l.text))
+                })
+              : null,
+            hasSpeech
+              ? el("button", {
+                  type: "button",
+                  class: "btn",
+                  text: `속도 ${RATES[state.rateIdx]}x`,
+                  onClick: () => {
+                    state.rateIdx = (state.rateIdx + 1) % RATES.length;
+                    saveState();
+                    render();
+                  }
+                })
+              : null
+          ]),
+          el("div", { class: "toolbar-right toolbar-lang-row" }, [
+            el("button", {
+              type: "button",
+              class: "toggle-btn icon-only",
+              text: "⛶",
+              "aria-label": "전체화면",
+              title: "전체화면",
+              onClick: () => openFullscreen(0)
+            }),
+            ...langToggleButtons()
           ])
         ]);
 
@@ -2389,7 +2370,7 @@
           ])
         ]);
 
-        appEl.replaceChildren(topbar, header, chatSection, exprSection, practiceSection, bottomNav);
+        appEl.replaceChildren(topbar, toolbar, header, chatSection, exprSection, practiceSection, bottomNav);
       }
 
       function render() {
