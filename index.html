@@ -1813,6 +1813,40 @@
         next();
       }
 
+      function speakingChromeInsets() {
+        let top = 0;
+        let bottom = 0;
+        document.querySelectorAll(".detail-topbar, .bottom-bar").forEach((el) => {
+          const pos = window.getComputedStyle(el).position;
+          if (pos !== "fixed" && pos !== "sticky") return;
+          const r = el.getBoundingClientRect();
+          if (r.bottom > 0 && r.top < window.innerHeight * 0.45) {
+            top = Math.max(top, r.bottom);
+          }
+          if (r.top < window.innerHeight && r.bottom > window.innerHeight * 0.55) {
+            bottom = Math.max(bottom, window.innerHeight - r.top);
+          }
+        });
+        return { top, bottom };
+      }
+
+      function scrollSpeakingLineIntoView() {
+        if (state.fsOpen || !state.speaking || state.speakingLineIdx < 0) return;
+        const node = document.querySelector('.bubble[data-line-idx="' + state.speakingLineIdx + '"]');
+        if (!node) return;
+        const rect = node.getBoundingClientRect();
+        const chrome = speakingChromeInsets();
+        const edge = 48;
+        const visTop = chrome.top + edge;
+        const visBottom = window.innerHeight - chrome.bottom - edge;
+        if (rect.top >= visTop && rect.bottom <= visBottom) return;
+        const visMid = (chrome.top + (window.innerHeight - chrome.bottom)) / 2;
+        const elMid = (rect.top + rect.bottom) / 2;
+        const delta = elMid - visMid;
+        if (Math.abs(delta) < 8) return;
+        window.scrollBy({ top: delta, behavior: "smooth" });
+      }
+
       function updateSpeakingUI() {
         const playBtn = document.getElementById("play-all-btn");
         if (playBtn) {
@@ -1823,6 +1857,7 @@
           const idx = Number(node.getAttribute("data-line-idx"));
           node.classList.toggle("is-speaking", state.speaking && idx === state.speakingLineIdx);
         });
+        scrollSpeakingLineIntoView();
       }
 
       function getFiltered() {
