@@ -568,6 +568,9 @@
       opacity: 0.6;
       user-select: none;
       -webkit-user-select: none;
+    }
+
+    [data-lang] {
       cursor: pointer;
     }
 
@@ -1211,27 +1214,31 @@
         }, [googleGIcon()]);
       }
 
-      function langText(tag, className, text, kind, key, opts) {
+      function isLangVisible(kind, key, opts) {
         const allOn = kind === "en" ? state.showAllEn : state.showAllKo;
+        if (opts && opts.noToggle) return allOn;
         const opened = kind === "en" ? state.openEn : state.openKo;
-        const visible = allOn || Boolean(opened[key]);
+        return allOn !== Boolean(key && opened[key]);
+      }
+
+      function langText(tag, className, text, kind, key, opts) {
+        const visible = isLangVisible(kind, key, opts);
         const attrs = {
           class: className + (visible ? "" : " is-blurred"),
           text,
           "data-lang": kind,
           "data-lang-key": key
         };
-        if (!allOn && !(opts && opts.noToggle)) {
+        if (!(opts && opts.noToggle)) {
+          const opened = kind === "en" ? state.openEn : state.openKo;
           attrs.onClick = (e) => {
             e.stopPropagation();
             if (opened[key]) delete opened[key];
             else opened[key] = true;
             syncLangVisibility();
           };
-          if (!visible) {
-            attrs.title = "탭해서 이 문장만 보기";
-            attrs["aria-hidden"] = "true";
-          }
+          attrs.title = visible ? "탭해서 이 문장 가리기" : "탭해서 이 문장만 보기";
+          if (!visible) attrs["aria-hidden"] = "true";
         }
         return el(tag, attrs);
       }
@@ -1240,17 +1247,12 @@
         document.querySelectorAll("[data-lang]").forEach((el) => {
           const kind = el.getAttribute("data-lang");
           const key = el.getAttribute("data-lang-key");
-          const allOn = kind === "en" ? state.showAllEn : state.showAllKo;
-          const opened = kind === "en" ? state.openEn : state.openKo;
-          const visible = allOn || Boolean(key && opened[key]);
+          if (el.closest(".fs-overlay")) return;
+          const visible = isLangVisible(kind, key);
           el.classList.toggle("is-blurred", !visible);
-          if (!allOn && !visible) {
-            el.setAttribute("aria-hidden", "true");
-            el.title = "탭해서 이 문장만 보기";
-          } else {
-            el.removeAttribute("aria-hidden");
-            if (el.getAttribute("title") === "탭해서 이 문장만 보기") el.removeAttribute("title");
-          }
+          el.title = visible ? "탭해서 이 문장 가리기" : "탭해서 이 문장만 보기";
+          if (!visible) el.setAttribute("aria-hidden", "true");
+          else el.removeAttribute("aria-hidden");
         });
         document.querySelectorAll(".toggle-btn.lang-toggle").forEach((btn) => {
           const isKo = btn.getAttribute("aria-label") === "한국어 뜻 보이기";
