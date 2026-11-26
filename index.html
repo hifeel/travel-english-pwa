@@ -790,45 +790,71 @@
     body.fs-open {
       overflow: hidden;
       overscroll-behavior: none;
-      touch-action: none;
+    }
+
+    body.fs-open .detail-topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 90;
+      margin: 0;
+      padding: calc(10px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    body.fs-open .bottom-bar {
+      z-index: 90;
+    }
+
+    .toggle-btn.icon-only {
+      min-width: 42px;
+      justify-content: center;
+      padding: 6px 10px;
+      font-size: 1.15rem;
+      font-weight: 700;
     }
 
     .fs-overlay {
       position: fixed;
-      inset: 0;
-      z-index: 80;
+      left: 0;
+      right: 0;
+      top: var(--fs-chrome-top, 72px);
+      bottom: var(--fs-chrome-bottom, 72px);
+      z-index: 40;
       display: none;
       flex-direction: column;
       background: var(--bg);
       color: var(--text);
-      padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+      padding: 0;
     }
 
     .fs-overlay.is-open {
       display: flex;
     }
 
-    .fs-overlay:fullscreen,
-    .fs-overlay:-webkit-full-screen {
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--bg);
-    }
-
-    .fs-top,
-    .fs-bottom {
+    .fs-top {
       flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      padding: 10px 14px;
+      padding: 8px 14px;
     }
 
     .fs-bottom {
-      min-height: 58px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
+      gap: 8px;
+      padding: 8px 14px 10px;
+      border-top: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg) 94%, transparent);
     }
 
     .fs-meta {
@@ -884,18 +910,10 @@
       color: var(--accent);
     }
 
-    .fs-stage-wrap {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 42px minmax(0, 1fr) 42px;
-      align-items: stretch;
-      gap: 2px;
-      padding: 0 6px;
-    }
-
     .fs-stage {
       position: relative;
+      flex: 1;
+      min-height: 0;
       overflow: hidden;
       touch-action: none;
     }
@@ -970,13 +988,24 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      margin-top: 28px;
+    }
+
+    .fs-dock-progress {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+
+    .fs-dock-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 520px;
     }
 
     @media (max-width: 560px) {
-      .fs-stage-wrap {
-        grid-template-columns: 34px minmax(0, 1fr) 34px;
-      }
       .fs-nav-btn,
       .fs-icon-btn {
         width: 36px;
@@ -1218,26 +1247,7 @@
         return el("div", { class: "fs-card" }, [
           label ? el("p", { class: "fs-speaker", text: label }) : null,
           langText("p", "fs-en", card.en, "en", card.key),
-          card.ko ? langText("p", "fs-ko", card.ko, "ko", card.key) : null,
-          el("div", { class: "fs-actions" }, [
-            hasSpeech
-              ? el("button", {
-                  id: "fs-play-btn",
-                  type: "button",
-                  class: "btn btn-primary",
-                  text: state.speaking ? "⏹ 정지" : "▶ 듣기",
-                  onClick: () => {
-                    if (state.speaking) {
-                      stopSpeech();
-                      updateSpeakingUI();
-                    } else {
-                      speakSingle(card.en);
-                    }
-                  }
-                })
-              : null,
-            googleStudyLink(card.en)
-          ])
+          card.ko ? langText("p", "fs-ko", card.ko, "ko", card.key) : null
         ]);
       }
 
@@ -1252,23 +1262,19 @@
         prevBtn: null,
         nextBtn: null,
         nextLessonBtn: null,
+        actions: null,
+        playBtn: null,
         animTimer: 0
       };
 
-      function isBrowserFullscreen() {
-        return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
-      }
-
-      function requestBrowserFullscreen(node) {
-        const req = node.requestFullscreen || node.webkitRequestFullscreen;
-        if (req) Promise.resolve(req.call(node)).catch(() => {});
-      }
-
-      function exitBrowserFullscreen() {
-        const doc = document;
-        if (!isBrowserFullscreen()) return;
-        const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
-        if (exit) Promise.resolve(exit.call(doc)).catch(() => {});
+      function syncFsChromeInsets() {
+        const topbar = document.querySelector(".detail-topbar");
+        const bottom = document.querySelector(".bottom-bar");
+        const top = topbar ? Math.round(topbar.getBoundingClientRect().bottom) : 0;
+        const bottomH = bottom ? Math.round(window.innerHeight - bottom.getBoundingClientRect().top) : 0;
+        const root = document.documentElement;
+        root.style.setProperty("--fs-chrome-top", Math.max(top, 0) + "px");
+        root.style.setProperty("--fs-chrome-bottom", Math.max(bottomH, 0) + "px");
       }
 
       function openFullscreen(index) {
@@ -1278,17 +1284,18 @@
         if (!cards.length) return;
         state.fsOpen = true;
         state.fsIndex = Math.max(0, Math.min(index || 0, cards.length - 1));
+        window.scrollTo(0, 0);
         document.body.classList.add("fs-open");
+        syncFsChromeInsets();
         fs.root.classList.add("is-open");
         fs.root.setAttribute("aria-hidden", "false");
         renderFs(0);
+        requestAnimationFrame(syncFsChromeInsets);
         try { fs.root.focus(); } catch {}
-        if (!isBrowserFullscreen()) requestBrowserFullscreen(fs.root);
       }
 
       function closeFullscreen(opts) {
         const silent = opts && opts.silent;
-        const skipExit = opts && opts.skipExitFs;
         if (!state.fsOpen && !fs.root.classList.contains("is-open")) return;
         state.fsOpen = false;
         state.fsAnimating = false;
@@ -1300,7 +1307,8 @@
         fs.root.classList.remove("is-open");
         fs.root.setAttribute("aria-hidden", "true");
         document.body.classList.remove("fs-open");
-        if (!skipExit) exitBrowserFullscreen();
+        document.documentElement.style.removeProperty("--fs-chrome-top");
+        document.documentElement.style.removeProperty("--fs-chrome-bottom");
         if (!silent) render();
       }
 
@@ -1356,6 +1364,12 @@
         } else {
           fs.nextLessonBtn.hidden = true;
         }
+        const dockKids = [];
+        if (fs.playBtn) dockKids.push(fs.playBtn);
+        dockKids.push(googleStudyLink(card.en));
+        fs.actions.replaceChildren(...dockKids);
+        if (fs.playBtn) fs.playBtn.textContent = state.speaking ? "⏹ 정지" : "▶ 듣기";
+        syncFsChromeInsets();
 
         const node = buildFsCard(card);
         const stage = fs.stage;
@@ -1433,14 +1447,7 @@
         });
 
         const top = el("div", { class: "fs-top" }, [
-          el("div", { class: "fs-meta" }, [
-            fs.title,
-            el("p", { class: "fs-progress-line" }, [
-              fs.section,
-              document.createTextNode(" · "),
-              fs.progress
-            ])
-          ]),
+          el("div", { class: "fs-meta" }, [fs.title]),
           el("div", { class: "fs-top-actions" }, [
             fs.toggles,
             fs.autoBtn,
@@ -1464,12 +1471,26 @@
           onClick: () => moveFs(1)
         });
 
-        const wrap = el("div", { class: "fs-stage-wrap" }, [
-          fs.prevBtn,
-          fs.stage,
-          fs.nextBtn
-        ]);
-
+        fs.playBtn = hasSpeech
+          ? el("button", {
+              id: "fs-play-btn",
+              type: "button",
+              class: "btn btn-primary",
+              text: "▶ 듣기",
+              onClick: () => {
+                const lesson = currentOpenLesson();
+                const card = getFsCards(lesson)[state.fsIndex];
+                if (!card) return;
+                if (state.speaking) {
+                  stopSpeech();
+                  updateSpeakingUI();
+                } else {
+                  speakSingle(card.en);
+                }
+              }
+            })
+          : null;
+        fs.actions = el("div", { class: "fs-actions" });
         fs.nextLessonBtn = el("button", {
           type: "button",
           class: "btn btn-primary",
@@ -1477,9 +1498,21 @@
           hidden: true,
           onClick: goNextLessonFromFs
         });
-        const bottom = el("div", { class: "fs-bottom" }, [fs.nextLessonBtn]);
+        const bottom = el("div", { class: "fs-bottom" }, [
+          el("p", { class: "fs-dock-progress" }, [
+            fs.section,
+            document.createTextNode(" · "),
+            fs.progress
+          ]),
+          el("div", { class: "fs-dock-row" }, [
+            fs.prevBtn,
+            fs.actions,
+            fs.nextBtn
+          ]),
+          fs.nextLessonBtn
+        ]);
 
-        fs.root.append(top, wrap, bottom);
+        fs.root.append(top, fs.stage, bottom);
         document.body.appendChild(fs.root);
 
         const SWIPE_X = 56;
@@ -1527,12 +1560,12 @@
           }
         });
 
-        const onFsChange = () => {
-          if (!state.fsOpen) return;
-          if (!isBrowserFullscreen()) closeFullscreen({ skipExitFs: true });
-        };
-        document.addEventListener("fullscreenchange", onFsChange);
-        document.addEventListener("webkitfullscreenchange", onFsChange);
+        window.addEventListener("resize", () => {
+          if (state.fsOpen) syncFsChromeInsets();
+        });
+        window.addEventListener("orientationchange", () => {
+          if (state.fsOpen) requestAnimationFrame(syncFsChromeInsets);
+        });
       }
 
       function haystack(d) {
@@ -1988,9 +2021,10 @@
             el("div", { class: "toolbar-right" }, [
               el("button", {
                 type: "button",
-                class: "toggle-btn",
-                text: "⛶ 전체화면",
-                "aria-label": "전체화면 보기",
+                class: "toggle-btn icon-only",
+                text: "⛶",
+                "aria-label": "전체화면",
+                title: "전체화면",
                 onClick: () => openFullscreen(0)
               }),
               ...langToggleButtons()
