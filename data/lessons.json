@@ -12639,5 +12639,112 @@
       }
     ],
     "practice": "I dropped my phone and cracked the screen. How long will it take to fix?"
+  },
+  {
+    "date": "2027-01-06",
+    "dateLabel": "2027년 1월 6일",
+    "title": "사이즈 교환하고 다른 사이즈 입어보기",
+    "category": "쇼핑",
+    "intro": "좋은 아침. 오늘은 어제 산 옷을 다른 사이즈로 교환하고 피팅룸에서 입어보는 장면이야.",
+    "subtitle": "어제 산 옷을 다른 사이즈로 교환하고 피팅룸에서 입어보는 장면",
+    "dialogue": [
+      {
+        "speaker": "You",
+        "text": "Hi, I bought this yesterday. Can I exchange it for a different size?"
+      },
+      {
+        "speaker": "Staff",
+        "text": "Sure. What size do you want?"
+      },
+      {
+        "speaker": "You",
+        "text": "This is small. I want medium, please."
+      },
+      {
+        "speaker": "Staff",
+        "text": "Let me check. Yes, we have medium."
+      },
+      {
+        "speaker": "You",
+        "text": "Can I try it on?"
+      },
+      {
+        "speaker": "Staff",
+        "text": "Sure. The fitting room is over there."
+      },
+      {
+        "speaker": "You",
+        "text": "It fits well. I like it."
+      },
+      {
+        "speaker": "Staff",
+        "text": "Great. Do you have the receipt?"
+      },
+      {
+        "speaker": "You",
+        "text": "Yes, here it is."
+      },
+      {
+        "speaker": "Staff",
+        "text": "Thank you, Mr. Kim. Here is your new shirt."
+      }
+    ],
+    "meaning": [
+      {
+        "speaker": "나",
+        "text": "안녕하세요, 어제 산 거예요. 다른 사이즈로 교환할 수 있을까요?"
+      },
+      {
+        "speaker": "직원",
+        "text": "네. 무슨 사이즈로요?"
+      },
+      {
+        "speaker": "나",
+        "text": "이건 스몰이에요. 미디엄으로 주세요."
+      },
+      {
+        "speaker": "직원",
+        "text": "확인해 볼게요. 네, 미디엄 있어요."
+      },
+      {
+        "speaker": "나",
+        "text": "입어봐도 될까요?"
+      },
+      {
+        "speaker": "직원",
+        "text": "네. 피팅룸은 저쪽이에요."
+      },
+      {
+        "speaker": "나",
+        "text": "잘 맞아요. 마음에 들어요."
+      },
+      {
+        "speaker": "직원",
+        "text": "좋아요. 영수증 있으세요?"
+      },
+      {
+        "speaker": "나",
+        "text": "네, 여기 있어요."
+      },
+      {
+        "speaker": "직원",
+        "text": "감사합니다, Kim님. 여기 새 셔츠예요."
+      }
+    ],
+    "expressions": [
+      {
+        "en": "Can I exchange it for a different size?",
+        "ko": "다른 사이즈로 교환할 수 있을까요?"
+      },
+      {
+        "en": "Can I try it on?",
+        "ko": "입어봐도 될까요?"
+      },
+      {
+        "en": "It fits well.",
+        "ko": "잘 맞아요."
+      }
+    ],
+    "practice": "Can I exchange it for a different size?"
   }
 ]
