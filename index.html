@@ -549,6 +549,22 @@
       color: var(--accent);
     }
 
+    .toggle-btn.lang-toggle {
+      min-width: 42px;
+      justify-content: center;
+      padding: 6px 10px;
+      font-size: 1.08rem;
+      font-weight: 800;
+    }
+
+    .is-blurred {
+      filter: blur(5px);
+      opacity: 0.6;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: pointer;
+    }
+
     .section-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -801,16 +817,17 @@
       const loadSaved = () => {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
-          if (!raw) return { studied: {}, favorite: {}, showAllKo: true, rateIdx: 1 };
+          if (!raw) return { studied: {}, favorite: {}, showAllKo: true, showAllEn: true, rateIdx: 1 };
           const parsed = JSON.parse(raw);
           return {
             studied: parsed.studied && typeof parsed.studied === "object" ? parsed.studied : {},
             favorite: parsed.favorite && typeof parsed.favorite === "object" ? parsed.favorite : {},
             showAllKo: typeof parsed.showAllKo === "boolean" ? parsed.showAllKo : true,
+            showAllEn: typeof parsed.showAllEn === "boolean" ? parsed.showAllEn : true,
             rateIdx: typeof parsed.rateIdx === "number" && RATES[parsed.rateIdx] ? parsed.rateIdx : 1
           };
         } catch {
-          return { studied: {}, favorite: {}, showAllKo: true, rateIdx: 1 };
+          return { studied: {}, favorite: {}, showAllKo: true, showAllEn: true, rateIdx: 1 };
         }
       };
 
@@ -821,6 +838,7 @@
             studied: state.studied,
             favorite: state.favorite,
             showAllKo: state.showAllKo,
+            showAllEn: state.showAllEn,
             rateIdx: state.rateIdx
           }));
         } catch {}
@@ -837,7 +855,9 @@
         studied: saved.studied,
         favorite: saved.favorite,
         showAllKo: saved.showAllKo,
+        showAllEn: saved.showAllEn,
         openKo: {},
+        openEn: {},
         rateIdx: saved.rateIdx,
         speaking: false,
         speakingLineIdx: -1,
@@ -887,6 +907,26 @@
           "aria-label": `${sentence} 구글 검색`,
           text: "G 검색"
         });
+      }
+
+      function langText(tag, className, text, kind, key) {
+        const allOn = kind === "en" ? state.showAllEn : state.showAllKo;
+        const opened = kind === "en" ? state.openEn : state.openKo;
+        const visible = allOn || Boolean(opened[key]);
+        const attrs = { class: className + (visible ? "" : " is-blurred"), text };
+        if (!allOn) {
+          attrs.onClick = (e) => {
+            e.stopPropagation();
+            if (opened[key]) delete opened[key];
+            else opened[key] = true;
+            render();
+          };
+          if (!visible) {
+            attrs.title = "탭해서 이 문장만 보기";
+            attrs["aria-hidden"] = "true";
+          }
+        }
+        return el(tag, attrs);
       }
 
       function haystack(d) {
@@ -1023,6 +1063,7 @@
         stopSpeech();
         state.openDate = date;
         state.openKo = {};
+        state.openEn = {};
         if (date) {
           const target = "#lesson=" + date;
           if (location.hash !== target) history.pushState(null, "", target);
@@ -1331,11 +1372,26 @@
             el("div", { class: "toolbar-right" }, [
               el("button", {
                 type: "button",
-                class: "toggle-btn" + (state.showAllKo ? " is-on" : ""),
-                text: state.showAllKo ? "뜻 전체 보임" : "뜻 숨김",
+                class: "toggle-btn lang-toggle" + (state.showAllKo ? " is-on" : ""),
+                text: "가",
+                "aria-label": "한국어 뜻 보이기",
+                "aria-pressed": state.showAllKo ? "true" : "false",
                 onClick: () => {
                   state.showAllKo = !state.showAllKo;
                   state.openKo = {};
+                  saveState();
+                  render();
+                }
+              }),
+              el("button", {
+                type: "button",
+                class: "toggle-btn lang-toggle" + (state.showAllEn ? " is-on" : ""),
+                text: "A",
+                "aria-label": "영어 보이기",
+                "aria-pressed": state.showAllEn ? "true" : "false",
+                onClick: () => {
+                  state.showAllEn = !state.showAllEn;
+                  state.openEn = {};
                   saveState();
                   render();
                 }
@@ -1350,7 +1406,6 @@
             lesson.dialogue.map((line, i) => {
               const m = lesson.meaning[i];
               const you = isYou(line.speaker);
-              const showKo = state.showAllKo || Boolean(state.openKo[i]);
               const speakerText = m ? `${line.speaker} · ${m.speaker}` : line.speaker;
 
               return el("div", { class: "bubble-row " + (you ? "is-you" : "is-staff") }, [
@@ -1361,17 +1416,6 @@
                   el("div", { class: "bubble-head" }, [
                     el("span", { class: "bubble-speaker", text: speakerText }),
                     el("div", { class: "bubble-actions" }, [
-                      m && !state.showAllKo
-                        ? el("button", {
-                            type: "button",
-                            class: "mini-btn",
-                            text: showKo ? "뜻 숨김" : "뜻",
-                            onClick: () => {
-                              state.openKo[i] = !state.openKo[i];
-                              render();
-                            }
-                          })
-                        : null,
                       hasSpeech
                         ? el("button", {
                             type: "button",
@@ -1383,8 +1427,8 @@
                       googleStudyLink(line.text)
                     ])
                   ]),
-                  el("p", { class: "bubble-en", text: line.text }),
-                  showKo && m ? el("p", { class: "bubble-ko", text: m.text }) : null
+                  langText("p", "bubble-en", line.text, "en", "line-" + i),
+                  m ? langText("p", "bubble-ko", m.text, "ko", "line-" + i) : null
                 ])
               ]);
             })
@@ -1394,11 +1438,11 @@
         const exprSection = el("section", { class: "section-card" }, [
           el("h2", { class: "section-heading", text: "핵심 표현" }),
           el("div", { class: "expr-grid" },
-            lesson.expressions.map((item) =>
+            lesson.expressions.map((item, i) =>
               el("div", { class: "expr-card" }, [
                 el("div", {}, [
-                  el("p", { class: "expr-en", text: item.en }),
-                  el("p", { class: "expr-ko", text: item.ko })
+                  langText("p", "expr-en", item.en, "en", "expr-" + i),
+                  langText("p", "expr-ko", item.ko, "ko", "expr-" + i)
                 ]),
                 el("div", { class: "expr-actions" }, [
                   hasSpeech
@@ -1420,7 +1464,7 @@
         const practiceSection = el("section", { class: "section-card" }, [
           el("h2", { class: "section-heading", text: "따라 말해 보기" }),
           el("div", { class: "practice-box" }, [
-            el("p", { class: "practice-en", text: lesson.practice }),
+            langText("p", "practice-en", lesson.practice, "en", "practice"),
             el("div", { class: "practice-actions" }, [
               hasSpeech
                 ? el("button", {
@@ -1499,6 +1543,7 @@
           stopSpeech();
           state.openDate = next;
           state.openKo = {};
+          state.openEn = {};
           render();
         }
       }
