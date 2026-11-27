@@ -12746,5 +12746,112 @@
       }
     ],
     "practice": "Can I exchange it for a different size?"
+  },
+  {
+    "date": "2027-01-07",
+    "dateLabel": "2027년 1월 7일",
+    "title": "[B1-B2 도전] 가격 비교하고 쿠폰 + 재고 확인하고 결제하기",
+    "category": "쇼핑",
+    "intro": "좋은 아침. 오늘은 매장에서 재킷 가격을 맞추고 쿠폰과 재고를 확인한 뒤 결제하는 장면이야.",
+    "subtitle": "매장에서 재킷 가격을 맞추고 쿠폰과 재고를 확인한 뒤 결제하는 장면",
+    "dialogue": [
+      {
+        "speaker": "You",
+        "text": "Hi, I'm interested in this jacket. I saw it cheaper online. Do you offer price matching?"
+      },
+      {
+        "speaker": "Staff",
+        "text": "We do match prices from our own website. Could you show me the price you saw?"
+      },
+      {
+        "speaker": "You",
+        "text": "Sure, here it is. It's 20 dollars less on your website. Could you match that price?"
+      },
+      {
+        "speaker": "Staff",
+        "text": "Yes, I can do that for you. Would you like to use any coupon as well?"
+      },
+      {
+        "speaker": "You",
+        "text": "I have a 10% coupon on my phone. Can I use it together with the price match?"
+      },
+      {
+        "speaker": "Staff",
+        "text": "I'm sorry, we can only use one discount at a time. Which one would you prefer?"
+      },
+      {
+        "speaker": "You",
+        "text": "Then I'll use the price match, please. And do you have this in size L in another color?"
+      },
+      {
+        "speaker": "Staff",
+        "text": "Let me check the stock. We have L in navy, but not in black. Would you like me to check another store?"
+      },
+      {
+        "speaker": "You",
+        "text": "No, navy is fine. I'll take the navy in L. Can I pay by card?"
+      },
+      {
+        "speaker": "Staff",
+        "text": "Of course, Mr. Kim. I'll ring it up at the matched price for you."
+      }
+    ],
+    "meaning": [
+      {
+        "speaker": "나",
+        "text": "안녕하세요, 이 재킷에 관심 있어요. 온라인에서 더 싸게 봤어요. 가격 맞춰주나요?"
+      },
+      {
+        "speaker": "직원",
+        "text": "저희 자체 웹사이트 가격과는 맞춰드려요. 보신 가격 보여주실 수 있을까요?"
+      },
+      {
+        "speaker": "나",
+        "text": "네, 여기요. 웹사이트에서 20달러 더 싸요. 이 가격으로 맞춰주실 수 있나요?"
+      },
+      {
+        "speaker": "직원",
+        "text": "네, 맞춰드릴게요. 쿠폰도 같이 쓰시겠어요?"
+      },
+      {
+        "speaker": "나",
+        "text": "휴대폰에 10% 쿠폰이 있어요. 가격 매칭이랑 같이 쓸 수 있나요?"
+      },
+      {
+        "speaker": "직원",
+        "text": "죄송해요, 할인은 한 번에 하나만 돼요. 어느 쪽으로 하시겠어요?"
+      },
+      {
+        "speaker": "나",
+        "text": "그럼 가격 매칭으로 할게요. 그리고 이거 L 사이즈에 다른 색상 있나요?"
+      },
+      {
+        "speaker": "직원",
+        "text": "재고 확인해 볼게요. 네이비색 L은 있는데, 검은색은 없어요. 다른 매장 확인해 드릴까요?"
+      },
+      {
+        "speaker": "나",
+        "text": "아니요, 네이비로 괜찮아요. 네이비 L로 할게요. 카드로 결제할 수 있나요?"
+      },
+      {
+        "speaker": "직원",
+        "text": "물론이죠, Kim님. 맞춰드린 가격으로 결제해 드릴게요."
+      }
+    ],
+    "expressions": [
+      {
+        "en": "Do you offer price matching?",
+        "ko": "가격 맞춰주나요?"
+      },
+      {
+        "en": "Can I use it together with the price match?",
+        "ko": "가격 매칭이랑 같이 쓸 수 있나요?"
+      },
+      {
+        "en": "Do you have this in size L in another color?",
+        "ko": "이거 L 사이즈에 다른 색상 있나요?"
+      }
+    ],
+    "practice": "Do you offer price matching?"
   }
 ]
