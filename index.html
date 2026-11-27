@@ -755,6 +755,20 @@
       color: #d32f2f;
     }
 
+    .mic-live-text {
+      margin: 5px 0 0;
+      font-weight: 550;
+      color: var(--text);
+      overflow-wrap: break-word;
+    }
+
+    .mic-listen-hint {
+      margin: 6px 0 0;
+      font-size: 0.8rem;
+      font-weight: 650;
+      color: var(--text-secondary);
+    }
+
     .mic-notice {
       margin: 0;
       font-weight: 650;
@@ -1475,10 +1489,9 @@
         }
         node.hidden = false;
         if (listening) {
-          node.appendChild(el("p", {
-            class: "mic-listen-label",
-            text: interim ? ("듣는 중… " + interim) : "듣는 중…"
-          }));
+          node.appendChild(el("p", { class: "mic-listen-label", text: "듣는 중…" }));
+          if (interim) node.appendChild(el("p", { class: "mic-live-text", text: interim }));
+          node.appendChild(el("p", { class: "mic-listen-hint", text: "다시 눌러 중지" }));
           return;
         }
         if (notice) {
@@ -1563,11 +1576,46 @@
         state.micKey = null;
       }
 
+      const MIC_SILENCE_MS = 2500;
+      const MIC_MAX_MS = 15000;
+      const MIC_MAX_RESTARTS = 20;
+
       let micRec = null;
       let micPendingKey = null;
       let micFinal = "";
       let micHeard = "";
       let micDiscard = false;
+      let micFinished = false;
+      let micWantStop = false;
+      let micStartedAt = 0;
+      let micLastResultAt = 0;
+      let micRestartCount = 0;
+      let micSilenceTimer = 0;
+      let micCapTimer = 0;
+      let micRestartTimer = 0;
+      let micSessionId = 0;
+
+      function joinTranscript(a, b) {
+        const left = String(a || "").trim();
+        const right = String(b || "").trim();
+        if (!right) return left;
+        if (!left) return right;
+        if (left.endsWith(right)) return left;
+        if (right.startsWith(left) && (right.length === left.length || right.charAt(left.length) === " ")) return right;
+        return left + " " + right;
+      }
+
+      function clearMicTimers() {
+        if (micSilenceTimer) { window.clearTimeout(micSilenceTimer); micSilenceTimer = 0; }
+        if (micCapTimer) { window.clearTimeout(micCapTimer); micCapTimer = 0; }
+        if (micRestartTimer) { window.clearTimeout(micRestartTimer); micRestartTimer = 0; }
+      }
+
+      function haltMicEngine() {
+        const rec = micRec;
+        if (!rec) return;
+        try { rec.stop(); } catch { try { rec.abort(); } catch {} }
+      }
 
       function finishMicAttempt(key, spoken) {
         const text = String(spoken || "").trim();
@@ -1575,9 +1623,159 @@
         if (text) {
           const expected = expectedTextForKey(key);
           state.micResults[key] = compareUtterance(expected, text);
-          state.micNotice = state.micNotice === "no-speech" ? null : state.micNotice;
+          if (state.micNotice === "no-speech") state.micNotice = null;
         } else if (!state.micNotice) {
           state.micNotice = "no-speech";
+        }
+      }
+
+      function liveMicText() {
+        return (micHeard || micFinal || state.micInterim || "").trim();
+      }
+
+      function targetFullyMatched(spoken) {
+        const expected = expectedTextForKey(state.micKey);
+        if (!expected || !String(spoken || "").trim()) return false;
+        const result = compareUtterance(expected, spoken);
+        return Boolean(result && (result.exact || result.percent === 100));
+      }
+
+      function armSilenceTimer() {
+        if (micSilenceTimer) window.clearTimeout(micSilenceTimer);
+        if (!(micFinal || micHeard)) return;
+        micSilenceTimer = window.setTimeout(() => {
+          micSilenceTimer = 0;
+          if (!state.micListening || micWantStop || micFinished) return;
+          if (!(micFinal || micHeard)) return;
+          if (micLastResultAt && Date.now() - micLastResultAt < MIC_SILENCE_MS - 40) {
+            armSilenceTimer();
+            return;
+          }
+          endMicSession();
+        }, MIC_SILENCE_MS);
+      }
+
+      function endMicSession(opts) {
+        if (micFinished) {
+          const queued = micPendingKey;
+          if (queued) {
+            micPendingKey = null;
+            beginMic(queued);
+          }
+          return;
+        }
+        const discard = Boolean(opts && opts.discard) || micDiscard;
+        const next = micPendingKey;
+        micPendingKey = null;
+        micFinished = true;
+        micWantStop = true;
+        micDiscard = discard;
+        clearMicTimers();
+        state.micListening = false;
+        state.micInterim = "";
+        haltMicEngine();
+        if (discard) {
+          micFinal = "";
+          micHeard = "";
+        } else {
+          finishMicAttempt(state.micKey, micFinal || micHeard);
+        }
+        updateMicUI();
+        if (next) beginMic(next);
+      }
+
+      function scheduleMicRestart() {
+        if (micWantStop || micFinished || micDiscard || !state.micListening) return;
+        if (Date.now() - micStartedAt >= MIC_MAX_MS) {
+          endMicSession();
+          return;
+        }
+        if (micRestartCount >= MIC_MAX_RESTARTS) {
+          endMicSession();
+          return;
+        }
+        if (micRestartTimer) return;
+        micRestartCount += 1;
+        const delay = micRestartCount > 8 ? 400 : 180;
+        micRestartTimer = window.setTimeout(() => {
+          micRestartTimer = 0;
+          startMicEngine();
+        }, delay);
+      }
+
+      function startMicEngine() {
+        if (!hasRecognition || micWantStop || micFinished || micDiscard || !state.micListening) return;
+        if (Date.now() - micStartedAt >= MIC_MAX_MS) {
+          endMicSession();
+          return;
+        }
+        if (micRec) return;
+
+        const session = micSessionId;
+        const rec = new SpeechRecognitionAPI();
+        rec.lang = "en-US";
+        rec.interimResults = true;
+        rec.continuous = true;
+        rec.maxAlternatives = 1;
+        micRec = rec;
+
+        rec.onresult = (event) => {
+          if (session !== micSessionId || micRec !== rec || micFinished || micWantStop) return;
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const piece = event.results[i][0] && event.results[i][0].transcript ? event.results[i][0].transcript : "";
+            if (!piece) continue;
+            if (event.results[i].isFinal) micFinal = joinTranscript(micFinal, piece);
+            else interim = joinTranscript(interim, piece);
+          }
+          micHeard = joinTranscript(micFinal, interim);
+          state.micInterim = micHeard;
+          micLastResultAt = Date.now();
+          armSilenceTimer();
+          updateMicUI();
+          if (targetFullyMatched(micHeard)) endMicSession();
+        };
+
+        rec.onspeechend = () => {
+          if (session !== micSessionId || micRec !== rec || micFinished || micWantStop) return;
+          if (micFinal || micHeard) armSilenceTimer();
+        };
+
+        rec.onerror = (event) => {
+          if (session !== micSessionId || micRec !== rec) return;
+          const err = event && event.error ? event.error : "";
+          if (err === "aborted" || err === "no-speech") return;
+          if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
+            state.micNotice = "denied";
+            endMicSession({ discard: true });
+            return;
+          }
+          if (micRestartCount >= MIC_MAX_RESTARTS) {
+            if (!liveMicText()) state.micNotice = "error";
+            endMicSession();
+          }
+        };
+
+        rec.onend = () => {
+          if (micRec === rec) micRec = null;
+          if (session !== micSessionId) return;
+          if (micFinished || micWantStop || micDiscard || !state.micListening) {
+            if (!micFinished) endMicSession({ discard: micDiscard });
+            return;
+          }
+          scheduleMicRestart();
+        };
+
+        try {
+          rec.start();
+        } catch {
+          micRec = null;
+          if (micRestartCount >= MIC_MAX_RESTARTS) {
+            if (!liveMicText()) state.micNotice = "error";
+            endMicSession();
+          } else {
+            scheduleMicRestart();
+          }
         }
       }
 
@@ -1593,6 +1791,10 @@
           stopSpeech();
           updateSpeakingUI();
         }
+        micSessionId += 1;
+        clearMicTimers();
+        haltMicEngine();
+        micRec = null;
         state.micKey = key;
         state.micListening = true;
         state.micInterim = "";
@@ -1600,86 +1802,29 @@
         delete state.micResults[key];
         micFinal = "";
         micHeard = "";
+        micDiscard = false;
+        micFinished = false;
+        micWantStop = false;
+        micStartedAt = Date.now();
+        micLastResultAt = 0;
+        micRestartCount = 0;
         micPendingKey = null;
         updateMicUI();
-
-        const rec = new SpeechRecognitionAPI();
-        rec.lang = "en-US";
-        rec.interimResults = true;
-        rec.continuous = false;
-        rec.maxAlternatives = 1;
-        micRec = rec;
-
-        rec.onresult = (event) => {
-          if (micRec !== rec) return;
-          let interim = "";
-          let finalText = "";
-          for (let i = 0; i < event.results.length; i++) {
-            const piece = event.results[i][0] && event.results[i][0].transcript ? event.results[i][0].transcript : "";
-            if (event.results[i].isFinal) finalText += (finalText ? " " : "") + piece;
-            else interim += (interim ? " " : "") + piece;
-          }
-          if (finalText) micFinal = finalText.trim();
-          micHeard = [micFinal, interim.trim()].filter(Boolean).join(" ").trim();
-          state.micInterim = interim.trim();
-          updateMicUI();
-        };
-
-        rec.onerror = (event) => {
-          if (micRec !== rec) return;
-          const err = event && event.error ? event.error : "";
-          if (err === "aborted") return;
-          if (err === "no-speech") state.micNotice = "no-speech";
-          else if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") state.micNotice = "denied";
-          else state.micNotice = "error";
-        };
-
-        rec.onend = () => {
-          if (micRec === rec) micRec = null;
-          const next = micPendingKey;
-          micPendingKey = null;
-          const discarded = micDiscard;
-          micDiscard = false;
-          if (next) {
-            state.micListening = false;
-            beginMic(next);
-            return;
-          }
-          state.micListening = false;
-          state.micInterim = "";
-          if (!discarded) finishMicAttempt(key, micFinal || micHeard);
-          updateMicUI();
-        };
-
-        try {
-          rec.start();
-        } catch {
-          micRec = null;
-          state.micListening = false;
-          state.micNotice = "error";
-          updateMicUI();
-        }
+        micCapTimer = window.setTimeout(() => {
+          micCapTimer = 0;
+          if (!state.micListening || micWantStop || micFinished) return;
+          endMicSession();
+        }, MIC_MAX_MS);
+        startMicEngine();
       }
 
       function stopMic(opts) {
-        const silent = opts && opts.silent;
-        const discard = opts && opts.discard;
-        micPendingKey = null;
-        if (!micRec && !state.micListening) {
-          if (!silent) updateMicUI();
+        if (!state.micListening && !micRec && !micRestartTimer) {
+          if (!(opts && opts.silent)) updateMicUI();
           return;
         }
-        if (discard) {
-          micDiscard = true;
-          micFinal = "";
-          micHeard = "";
-        }
-        state.micListening = false;
-        if (micRec) {
-          try { micRec.stop(); } catch { try { micRec.abort(); } catch {} }
-        } else if (!silent) {
-          updateMicUI();
-        }
+        if (!(opts && opts.keepPending)) micPendingKey = null;
+        endMicSession(opts);
       }
 
       function toggleMic(key) {
@@ -1695,7 +1840,7 @@
         }
         if (state.micListening) {
           micPendingKey = key;
-          try { if (micRec) micRec.abort(); } catch {}
+          stopMic({ keepPending: true });
           return;
         }
         beginMic(key);
