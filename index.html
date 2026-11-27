@@ -1753,13 +1753,6 @@
         }
       }
 
-      function playNativeModel(key) {
-        stopMicPlayback();
-        updateMicUI();
-        const text = expectedTextForKey(key);
-        if (text && hasSpeech) speakSingle(text);
-      }
-
       function micPlaybackRow(key) {
         if (state.micListening && state.micKey === key) return null;
         const rec = state.micRecordings[key];
@@ -1778,23 +1771,6 @@
           }, [
             el("span", { class: "mic-play-icon" }, [svgIcon(HEADPHONE_ICON)]),
             el("span", { text: "내 목소리 듣기" })
-          ]));
-        }
-        const expected = expectedTextForKey(key);
-        if (hasSpeech && expected && (state.micResults[key] || (rec && rec.url))) {
-          kids.push(el("button", {
-            type: "button",
-            class: "mic-play-btn",
-            "aria-label": "원어민",
-            title: "원어민",
-            onClick: (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              playNativeModel(key);
-            }
-          }, [
-            el("span", { class: "mic-play-icon" }, [speakerIcon()]),
-            el("span", { text: "원어민" })
           ]));
         }
         if (!kids.length) return null;
