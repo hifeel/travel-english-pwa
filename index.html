@@ -477,6 +477,13 @@
       border-color: var(--accent);
       color: var(--accent-text);
     }
+    .dual-note {
+      align-self: center;
+      font-size: 11px;
+      opacity: 0.68;
+      padding: 0 2px;
+      white-space: nowrap;
+    }
 
     .btn-done.is-on {
       background: var(--green-soft);
@@ -2840,13 +2847,29 @@
       }
 
       if (hasSpeech) {
-        window.speechSynthesis.addEventListener(
-          "voiceschanged",
-          () => {
-            if (!state.speaking && !state.fsOpen) render();
-          },
-          { once: true }
-        );
+        const warmupVoices = () => {
+          try {
+            const w = new SpeechSynthesisUtterance("ok");
+            w.volume = 0;
+            w.lang = "en-US";
+            window.speechSynthesis.speak(w);
+          } catch {
+            /* ignore */
+          }
+        };
+        warmupVoices();
+        window.__warmupVoices = warmupVoices;
+        window.speechSynthesis.addEventListener("voiceschanged", () => {
+          if (!state.speaking && !state.fsOpen) render();
+        });
+      }
+
+      function dualNoteText() {
+        const pair = roleVoices();
+        if (!pair[0] || !pair[1]) return "음성 준비 중…";
+        if (pair[0] === pair[1]) return "이 브라우저는 영어 음성 1개만 사용 가능";
+        const first = (v) => ((v.name || "").split(" ")[0] || "en").trim();
+        return first(pair[0]) + " / " + first(pair[1]);
       }
 
       function speakSingle(text, voiceOverride) {
@@ -3330,9 +3353,13 @@
                   stopSpeech();
                   state.dualVoice = !state.dualVoice;
                   saveDualVoice();
+                  if (state.dualVoice && window.__warmupVoices) window.__warmupVoices();
                   render();
                   }
                   })
+                  : null,
+                  hasSpeech && DUAL_VOICE_DATES.has(lesson.date) && state.dualVoice
+                  ? el("span", { class: "dual-note", text: dualNoteText() })
                   : null
                   ]),
           el("div", { class: "toolbar-right toolbar-lang-row" }, [
