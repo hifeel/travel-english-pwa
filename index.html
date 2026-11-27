@@ -1240,7 +1240,8 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
-      const DUAL_VOICE_KEY = "travel-engl…oice";
+      const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
+      const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
       const CATEGORIES = ["전체", "공항", "호텔", "식당", "교통", "쇼핑", "긴급/병원", "기타"];
       const CATEGORY_META = {
@@ -1311,6 +1312,7 @@
         rateIdx: saved.rateIdx,
         dualVoice: (() => {
           try {
+            if (localStorage.getItem(DUAL_VOICE_KEY_LEGACY) === "1") return true;
             return localStorage.getItem(DUAL_VOICE_KEY) === "1";
           } catch {
             return false;
@@ -2882,6 +2884,11 @@
         u.rate = RATES[state.rateIdx];
         const v = voiceOverride || pickVoice();
         if (v) u.voice = v;
+        if (voiceOverride) {
+          const pair = roleVoices();
+          if (pair[0] && voiceOverride.name === pair[0].name) u.pitch = 1.12;
+          else if (pair[1] && voiceOverride.name === pair[1].name) u.pitch = 0.9;
+        }
         u.onend = () => {
           state.speaking = false;
           state.speakingLineIdx = -1;
@@ -2908,6 +2915,7 @@
         stopSpeech();
         const voice = pickVoice();
         const rate = RATES[state.rateIdx];
+        const pair = voices ? roleVoices() : [null, null];
         state.speaking = true;
         let idx = 0;
 
@@ -2924,11 +2932,15 @@
           u.lang = "en-US";
           u.rate = rate;
           const roleVoice = voices && voices[idx] ? voices[idx] : null;
-          if (roleVoice) u.voice = roleVoice;
-          else if (voice) u.voice = voice;
+          if (roleVoice) {
+            u.voice = roleVoice;
+            if (pair[0] && roleVoice.name === pair[0].name) u.pitch = 1.12;
+            else if (pair[1] && roleVoice.name === pair[1].name) u.pitch = 0.9;
+          } else if (voice) u.voice = voice;
           u.onend = () => {
             idx += 1;
-            next();
+            if (roleVoice) setTimeout(next, 320);
+            else next();
           };
           u.onerror = () => {
             state.speaking = false;
