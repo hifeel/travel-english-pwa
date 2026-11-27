@@ -769,6 +769,64 @@
       color: var(--text-secondary);
     }
 
+    .mic-playback {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .fs-card .mic-playback {
+      justify-content: center;
+    }
+
+    .mic-play-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px 3px 3px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      font-weight: 650;
+    }
+
+    .mic-play-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .mic-play-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-soft);
+      color: var(--accent);
+      flex: none;
+    }
+
+    .mic-play-icon svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+    }
+
+    .mic-play-btn.is-playing {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .mic-play-btn.is-playing .mic-play-icon {
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+
     .mic-notice {
       margin: 0;
       font-weight: 650;
@@ -1250,7 +1308,8 @@
         micListening: false,
         micInterim: "",
         micNotice: null,
-        micResults: {}
+        micResults: {},
+        micRecordings: {}
       };
 
       const appEl = document.getElementById("app");
@@ -1481,9 +1540,10 @@
         const listening = state.micListening && state.micKey === key;
         const notice = state.micKey === key ? state.micNotice : null;
         const result = state.micResults[key];
+        const recording = state.micRecordings[key];
         const interim = listening ? state.micInterim : "";
         node.replaceChildren();
-        if (!listening && !notice && !result) {
+        if (!listening && !notice && !result && !(recording && recording.url)) {
           node.hidden = true;
           return;
         }
@@ -1520,6 +1580,8 @@
             text: result.good ? "잘했어요! ✅" : ("다시 해 볼까요? " + result.percent + "%")
           }));
         }
+        const playback = micPlaybackRow(key);
+        if (playback) node.appendChild(playback);
       }
 
       function micHost(key) {
@@ -1570,6 +1632,8 @@
       }
 
       function clearMicResults() {
+        stopMicPlayback();
+        revokeAllMicRecordings();
         state.micResults = {};
         state.micNotice = null;
         state.micInterim = "";
@@ -1594,6 +1658,213 @@
       let micCapTimer = 0;
       let micRestartTimer = 0;
       let micSessionId = 0;
+      let micStream = null;
+      let micRecorder = null;
+      let micChunks = [];
+      let micRecordMime = "";
+      let micAudio = null;
+      let micPlayingKey = null;
+
+      const HEADPHONE_ICON = "M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z";
+
+      function canRecordDuringRecognition() {
+        // Android Chrome often cuts off or aborts SpeechRecognition if
+        // getUserMedia is opened at the same time. Prefer a stable check.
+        return !/Android/i.test(navigator.userAgent || "");
+      }
+
+      function pickRecorderMime() {
+        if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return "";
+        const types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg;codecs=opus"];
+        for (let i = 0; i < types.length; i++) {
+          if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+        }
+        return "";
+      }
+
+      function releaseMicStream(stream) {
+        const s = stream || micStream;
+        if (!s) return;
+        s.getTracks().forEach((track) => { try { track.stop(); } catch {} });
+        if (!stream || stream === micStream) micStream = null;
+      }
+
+      function revokeMicRecording(key) {
+        const rec = state.micRecordings[key];
+        if (rec && rec.url) {
+          try { URL.revokeObjectURL(rec.url); } catch {}
+        }
+        delete state.micRecordings[key];
+      }
+
+      function revokeAllMicRecordings() {
+        Object.keys(state.micRecordings || {}).forEach((key) => revokeMicRecording(key));
+        state.micRecordings = {};
+      }
+
+      function stopMicPlayback() {
+        if (micAudio) {
+          try { micAudio.pause(); } catch {}
+          micAudio = null;
+        }
+        micPlayingKey = null;
+      }
+
+      function playMicRecording(key) {
+        const rec = state.micRecordings[key];
+        if (!rec || !rec.url) return;
+        if (state.speaking) {
+          stopSpeech();
+          updateSpeakingUI();
+        }
+        const same = micPlayingKey === key && micAudio && !micAudio.paused;
+        stopMicPlayback();
+        if (same) {
+          updateMicUI();
+          return;
+        }
+        const audio = new Audio(rec.url);
+        micAudio = audio;
+        micPlayingKey = key;
+        audio.onended = () => {
+          if (micAudio === audio) {
+            micAudio = null;
+            micPlayingKey = null;
+            updateMicUI();
+          }
+        };
+        audio.onerror = () => {
+          if (micAudio === audio) {
+            micAudio = null;
+            micPlayingKey = null;
+            updateMicUI();
+          }
+        };
+        updateMicUI();
+        const play = audio.play();
+        if (play && typeof play.catch === "function") {
+          play.catch(() => {
+            if (micAudio === audio) {
+              micAudio = null;
+              micPlayingKey = null;
+              updateMicUI();
+            }
+          });
+        }
+      }
+
+      function playNativeModel(key) {
+        stopMicPlayback();
+        updateMicUI();
+        const text = expectedTextForKey(key);
+        if (text && hasSpeech) speakSingle(text);
+      }
+
+      function micPlaybackRow(key) {
+        if (state.micListening && state.micKey === key) return null;
+        const rec = state.micRecordings[key];
+        const kids = [];
+        if (rec && rec.url) {
+          kids.push(el("button", {
+            type: "button",
+            class: "mic-play-btn" + (micPlayingKey === key ? " is-playing" : ""),
+            "aria-label": "내 목소리 듣기",
+            title: "내 목소리 듣기",
+            onClick: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              playMicRecording(key);
+            }
+          }, [
+            el("span", { class: "mic-play-icon" }, [svgIcon(HEADPHONE_ICON)]),
+            el("span", { text: "내 목소리 듣기" })
+          ]));
+        }
+        const expected = expectedTextForKey(key);
+        if (hasSpeech && expected && (state.micResults[key] || (rec && rec.url))) {
+          kids.push(el("button", {
+            type: "button",
+            class: "mic-play-btn",
+            "aria-label": "원어민",
+            title: "원어민",
+            onClick: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              playNativeModel(key);
+            }
+          }, [
+            el("span", { class: "mic-play-icon" }, [speakerIcon()]),
+            el("span", { text: "원어민" })
+          ]));
+        }
+        if (!kids.length) return null;
+        return el("div", { class: "mic-playback" }, kids);
+      }
+
+      function startMicRecording(session) {
+        if (!canRecordDuringRecognition()) return;
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") return;
+        if (typeof MediaRecorder === "undefined") return;
+        const mime = pickRecorderMime();
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then((stream) => {
+          if (session !== micSessionId || micWantStop || micFinished || !state.micListening) {
+            releaseMicStream(stream);
+            return;
+          }
+          micStream = stream;
+          micChunks = [];
+          try {
+            micRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+          } catch {
+            releaseMicStream(stream);
+            micRecorder = null;
+            return;
+          }
+          micRecordMime = micRecorder.mimeType || mime || "audio/webm";
+          micRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size) micChunks.push(e.data);
+          };
+          try {
+            micRecorder.start(250);
+          } catch {
+            releaseMicStream(stream);
+            micRecorder = null;
+          }
+        }).catch(() => {});
+      }
+
+      function stopMicRecording(key, opts) {
+        const discard = Boolean(opts && opts.discard);
+        const rec = micRecorder;
+        const stream = micStream;
+        const chunks = micChunks;
+        const mime = micRecordMime || "audio/webm";
+        micRecorder = null;
+        micStream = null;
+        micChunks = [];
+        micRecordMime = "";
+
+        const finishBlob = () => {
+          releaseMicStream(stream);
+          if (discard || !key || !chunks.length) return;
+          let blob;
+          try { blob = new Blob(chunks, { type: mime }); } catch { return; }
+          if (!blob || blob.size < 200) return;
+          const url = URL.createObjectURL(blob);
+          if (state.micRecordings[key] && state.micRecordings[key].url) {
+            try { URL.revokeObjectURL(state.micRecordings[key].url); } catch {}
+          }
+          state.micRecordings[key] = { url, mime };
+          updateMicUI();
+        };
+
+        if (!rec || rec.state === "inactive") {
+          finishBlob();
+          return;
+        }
+        rec.onstop = finishBlob;
+        try { rec.stop(); } catch { finishBlob(); }
+      }
 
       function joinTranscript(a, b) {
         const left = String(a || "").trim();
@@ -1674,11 +1945,14 @@
         state.micListening = false;
         state.micInterim = "";
         haltMicEngine();
+        const endedKey = state.micKey;
         if (discard) {
           micFinal = "";
           micHeard = "";
+          stopMicRecording(null, { discard: true });
         } else {
-          finishMicAttempt(state.micKey, micFinal || micHeard);
+          finishMicAttempt(endedKey, micFinal || micHeard);
+          stopMicRecording(endedKey);
         }
         updateMicUI();
         if (next) beginMic(next);
@@ -1791,9 +2065,11 @@
           stopSpeech();
           updateSpeakingUI();
         }
+        stopMicPlayback();
         micSessionId += 1;
         clearMicTimers();
         haltMicEngine();
+        stopMicRecording(null, { discard: true });
         micRec = null;
         state.micKey = key;
         state.micListening = true;
@@ -1816,6 +2092,7 @@
           endMicSession();
         }, MIC_MAX_MS);
         startMicEngine();
+        startMicRecording(micSessionId);
       }
 
       function stopMic(opts) {
@@ -2528,6 +2805,7 @@
       function speakSingle(text) {
         if (!hasSpeech) return;
         stopMic({ silent: true, discard: true });
+        stopMicPlayback();
         stopSpeech();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = "en-US";
