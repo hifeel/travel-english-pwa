@@ -472,6 +472,12 @@
       border-color: var(--accent-hover);
     }
 
+    .btn-dual.is-on {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-text);
+    }
+
     .btn-done.is-on {
       background: var(--green-soft);
       border-color: var(--green);
@@ -1227,6 +1233,8 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
+      const DUAL_VOICE_KEY = "travel-engl…oice";
+      const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
       const CATEGORIES = ["전체", "공항", "호텔", "식당", "교통", "쇼핑", "긴급/병원", "기타"];
       const CATEGORY_META = {
         "공항": { icon: "✈️" },
@@ -1294,6 +1302,13 @@
         openKo: {},
         openEn: {},
         rateIdx: saved.rateIdx,
+        dualVoice: (() => {
+          try {
+            return localStorage.getItem(DUAL_VOICE_KEY) === "1";
+          } catch {
+            return false;
+          }
+        })(),
         speaking: false,
         speakingLineIdx: -1,
         offlineReady: false,
@@ -2318,7 +2333,7 @@
 
       function playFsCard(card) {
         if (!card) return;
-        if (hasSpeech && card.en) speakSingle(card.en);
+        if (hasSpeech && card.en) speakSingle(card.en, roleVoiceFor(currentOpenLesson(), card.speakerEn));
       }
 
       const fs = {
@@ -2401,8 +2416,9 @@
         const card = getFsCards(lesson)[state.fsIndex];
         if (!card || !card.en) return;
         const spoken = card.en;
+        const roleVoice = roleVoiceFor(lesson, card.speakerEn);
         window.setTimeout(() => {
-          if (state.fsOpen && state.fsAutoplay && !state.speaking) speakSingle(spoken);
+          if (state.fsOpen && state.fsAutoplay && !state.speaking) speakSingle(spoken, roleVoice);
         }, 80);
       }
 
@@ -2513,8 +2529,9 @@
         renderFs(dir);
         if (state.fsAutoplay && hasSpeech && !state.micListening) {
           const spoken = cards[state.fsIndex].en;
+          const roleVoice = roleVoiceFor(lesson, cards[state.fsIndex].speakerEn);
           window.setTimeout(() => {
-            if (state.fsOpen && state.fsAutoplay) speakSingle(spoken);
+            if (state.fsOpen && state.fsAutoplay) speakSingle(spoken, roleVoice);
           }, 280);
         }
       }
@@ -2612,7 +2629,7 @@
               const lesson = currentOpenLesson();
               const cards = getFsCards(lesson);
               const card = cards[state.fsIndex];
-              if (card) speakSingle(card.en);
+              if (card) speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn));
             }
           }
         });
@@ -2652,7 +2669,7 @@
                   stopSpeech();
                   updateSpeakingUI();
                 } else {
-                  speakSingle(card.en);
+                  speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn));
                 }
               }
             })
@@ -2778,7 +2795,61 @@
         );
       }
 
-      function speakSingle(text) {
+      function roleVoices() {
+        if (!hasSpeech) return [null, null];
+        const voices = window.speechSynthesis.getVoices();
+        const en = voices.filter((v) => ((v.lang || "") + "").toLowerCase().startsWith("en"));
+        if (!en.length) return [null, null];
+        const lname = (v) => ((v.name || "") + "").toLowerCase();
+        const match = (v, keys) => keys.some((k) => lname(v).indexOf(k) !== -1);
+        const NOVELTY = ["bahh", "bells", "boing", "cellos", "bad news", "good news", "bubbles", "trinoids", "whisper", "zarvox", "hysterical", "pipeline", "wobble", "fahrenheit", "jester", "deranged", "superman", "badyet", "junior", "elliot", "fred ("];
+        const usable = en.filter((v) => !NOVELTY.some((k) => lname(v).indexOf(k) !== -1));
+        const pool = usable.length ? usable : en;
+        const youVoice =
+          pool.find((v) => match(v, ["google us english", "samantha", "aria", "jenny", "zira", "susan", "karen", "female"])) ||
+          pool.find((v) => v.lang === "en-US" && v.localService) ||
+          pool.find((v) => v.lang === "en-US") ||
+          pool[0];
+        const staffVoice =
+          pool.find((v) => v !== youVoice && match(v, ["guy", "alex", "david", "daniel", "fred", "mark", "george", "oliver", "arthur", "albert", "male"])) ||
+          pool.find((v) => v !== youVoice && v.lang === "en-US") ||
+          pool.find((v) => v !== youVoice) ||
+          youVoice;
+        return [youVoice, staffVoice];
+      }
+
+      function dualOnFor(lesson) {
+        if (!state.dualVoice || !lesson || !DUAL_VOICE_DATES.has(lesson.date)) return false;
+        const pair = roleVoices();
+        return Boolean(pair[0] && pair[1] && pair[0] !== pair[1]);
+      }
+
+      function roleVoiceFor(lesson, speaker) {
+        if (!lesson || !speaker) return null;
+        if (!dualOnFor(lesson)) return null;
+        const pair = roleVoices();
+        return isYou(speaker) ? pair[0] : pair[1];
+      }
+
+      function saveDualVoice() {
+        try {
+          localStorage.setItem(DUAL_VOICE_KEY, state.dualVoice ? "1" : "0");
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (hasSpeech) {
+        window.speechSynthesis.addEventListener(
+          "voiceschanged",
+          () => {
+            if (!state.speaking && !state.fsOpen) render();
+          },
+          { once: true }
+        );
+      }
+
+      function speakSingle(text, voiceOverride) {
         if (!hasSpeech) return;
         stopMic({ silent: true, discard: true });
         stopMicPlayback();
@@ -2786,7 +2857,7 @@
         const u = new SpeechSynthesisUtterance(text);
         u.lang = "en-US";
         u.rate = RATES[state.rateIdx];
-        const v = pickVoice();
+        const v = voiceOverride || pickVoice();
         if (v) u.voice = v;
         u.onend = () => {
           state.speaking = false;
@@ -2803,7 +2874,7 @@
         updateSpeakingUI();
       }
 
-      function speakDialogue(lines) {
+      function speakDialogue(lines, voices) {
         if (!hasSpeech) return;
         if (state.speaking) {
           stopSpeech();
@@ -2829,7 +2900,9 @@
           const u = new SpeechSynthesisUtterance(lines[idx]);
           u.lang = "en-US";
           u.rate = rate;
-          if (voice) u.voice = voice;
+          const roleVoice = voices && voices[idx] ? voices[idx] : null;
+          if (roleVoice) u.voice = roleVoice;
+          else if (voice) u.voice = voice;
           u.onend = () => {
             idx += 1;
             next();
@@ -3225,7 +3298,10 @@
                   class: "btn btn-primary",
                   text: state.speaking ? "■ 중지" : "▶ 전체 듣기",
                   "aria-label": state.speaking ? "전체 듣기 중지" : "전체 듣기",
-                  onClick: () => speakDialogue(lesson.dialogue.map((l) => l.text))
+                  onClick: () => speakDialogue(
+                    lesson.dialogue.map((l) => l.text),
+                    dualOnFor(lesson) ? lesson.dialogue.map((l) => roleVoiceFor(lesson, l.speaker)) : null
+                  )
                 })
               : null,
             hasSpeech
@@ -3238,9 +3314,27 @@
                     saveState();
                     render();
                   }
-                })
-              : null
-          ]),
+                  })
+                  : null,
+                  hasSpeech && DUAL_VOICE_DATES.has(lesson.date)
+                  ? el("button", {
+                  type: "button",
+                  class: "btn btn-dual" + (state.dualVoice ? " is-on" : ""),
+                  text: state.dualVoice ? "👥 2명 듣기" : "👤 1명 듣기",
+                  "aria-label": "대화 음성 모드",
+                  "aria-pressed": state.dualVoice ? "true" : "false",
+                  title: state.dualVoice
+                  ? "여행자/직원 서로 다른 음성으로 듣기 (켜짐)"
+                  : "여행자/직원 서로 다른 음성으로 듣기 (off)",
+                  onClick: () => {
+                  stopSpeech();
+                  state.dualVoice = !state.dualVoice;
+                  saveDualVoice();
+                  render();
+                  }
+                  })
+                  : null
+                  ]),
           el("div", { class: "toolbar-right toolbar-lang-row" }, [
             el("button", {
               type: "button",
@@ -3275,7 +3369,7 @@
                             type: "button",
                             class: "mini-btn",
                             text: "▶ 듣기",
-                            onClick: () => speakSingle(line.text)
+                            onClick: () => speakSingle(line.text, roleVoiceFor(lesson, line.speaker))
                           })
                         : null,
                       googleStudyLink(line.text),
