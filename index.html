@@ -198,6 +198,19 @@
 
     .back-chip:active { transform: scale(0.96); }
 
+    .list-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 4px 0 6px;
+    }
+
+    .list-cat-name {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-primary);
+    }
+
     .cat-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1400,7 +1413,7 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
-      const APP_VERSION = "v50";
+      const APP_VERSION = "v51";
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
@@ -3936,6 +3949,7 @@
 
         const goList = (cat) => {
           state.category = cat;
+          state.query = "";
           state.view = "list";
           render();
         };
@@ -3998,70 +4012,81 @@
           el("span", { class: "cat-tile-name", text: `전체 대화 ${state.lessons.length}개 보기` })
         ]));
 
-        const grid = el("section", { class: "cat-grid", "aria-label": "분류" }, tiles);
+        const tilesSection = el("section", { class: "cat-grid", "aria-label": "분류" }, tiles);
+        const mainResults = el("section", { id: "main-results" });
+
+        const mainSearchInput = el("input", {
+          id: "main-search-box",
+          class: "search-input",
+          type: "search",
+          placeholder: "단어, 표현, 장면 검색 (예: airport, 세탁, 체크인)",
+          value: state.query,
+          "aria-label": "전체 대화 검색",
+          onInput: (e) => {
+            state.query = e.target.value;
+            syncCatsDynamic();
+          }
+        });
+        const mainClearBtn = el("button", {
+          class: "search-clear",
+          type: "button",
+          "aria-label": "검색어 지우기",
+          text: "×",
+          onClick: () => {
+            state.query = "";
+            syncCatsDynamic();
+            const box = document.getElementById("main-search-box");
+            if (box) box.focus();
+          }
+        });
+        const mainSearch = el("section", { class: "controls" }, [
+          el("div", { class: "search-wrap" }, [
+            el("span", { class: "search-icon", "aria-hidden": "true", text: "🔍" }),
+            mainSearchInput,
+            mainClearBtn
+          ])
+        ]);
+
         const footer = el("p", {
           class: "footer-note",
           text: "참고: 9월 20~27일 아침 대화와 초기 추가 대화 15개는 이전 채팅 기록을 불러올 수 없어 포함되지 않았습니다."
         });
         const versionTag = el("p", { class: "version-tag", text: APP_VERSION });
-        appEl.replaceChildren(hero, grid, footer, versionTag);
+        appEl.replaceChildren(hero, mainSearch, tilesSection, mainResults, footer, versionTag);
+        syncCatsDynamic();
+        if (state.query.trim()) {
+          const box0 = document.getElementById("main-search-box");
+          if (box0) box0.focus();
+        }
         window.scrollTo(0, 0);
       }
 
       function renderHome() {
-        const { final, counts } = getFiltered();
-        const studiedCount = Object.keys(state.studied).length;
-        const favCount = Object.keys(state.favorite).length;
+        const { final } = getFiltered();
 
-        const hero = el("header", { class: "hero" }, [
+        const catMetaTop = state.category === "전체"
+          ? { icon: "🗂️" }
+          : (CATEGORY_META[state.category] || { icon: "💬" });
+        const listTop = el("header", { class: "list-top" }, [
           el("button", {
             type: "button",
             class: "back-chip",
             text: "← 분류",
             "aria-label": "분류 화면으로 돌아가기",
             onClick: () => {
+              state.query = "";
               state.view = "cats";
               render();
             }
           }),
-          el("div", { class: "hero-top" }, [ 
-            el("h1", { text: "여행 영어 대화 모음" }),
-            state.installPrompt
-              ? el("button", {
-                  class: "install-btn",
-                  type: "button",
-                  text: "📲 앱 설치",
-                  onClick: async () => {
-                    const p = state.installPrompt;
-                    if (!p) return;
-                    p.prompt();
-                    await p.userChoice;
-                    state.installPrompt = null;
-                    render();
-                  }
-                })
-              : null
-          ]),
-          el("p", {
-            class: "hero-sub",
-            text: state.lessons.length
-              ? `${formatDotDate(state.lessons[0].date)} – ${formatDotDate(state.lessons[state.lessons.length - 1].date)} · 총 ${state.lessons.length}개 장면 (최신순)`
-              : "총 0개 장면"
-          }),
-          el("div", { class: "stats-row" }, [
-            el("span", { class: "stat-pill", text: `✓ 학습 완료 ${studiedCount}/${state.lessons.length}` }),
-            el("span", { class: "stat-pill", text: `★ 즐겨찾기 ${favCount}` }),
-            state.offlineReady
-              ? el("span", { class: "stat-pill is-offline", text: "● 오프라인 저장됨" })
-              : null
-          ])
+          el("span", { class: "list-cat-name", text: `${catMetaTop.icon} ${state.category}` })
         ]);
 
         const searchInput = el("input", {
           id: "search-box",
           class: "search-input",
           type: "search",
-          placeholder: "단어, 표현, 장면 검색 (예: airport, 세탁, 체크인)",
+          placeholder: `${state.category} 안에서 검색 (예: airport, 세탁, 체크인)`,
           value: state.query,
           "aria-label": "대화 검색",
           onInput: (e) => {
@@ -4091,23 +4116,6 @@
             searchInput,
             clearBtn
           ]),
-          el("div", { class: "chips-row", role: "tablist", "aria-label": "카테고리" },
-            CATEGORIES.map((cat) => {
-              const meta = CATEGORY_META[cat];
-              return el("button", {
-                type: "button",
-                class: "chip" + (state.category === cat ? " is-active" : ""),
-                onClick: () => {
-                  state.category = cat;
-                  render();
-                }
-              }, [
-                meta ? el("span", { "aria-hidden": "true", text: meta.icon }) : null,
-                el("span", { text: cat }),
-                el("span", { class: "chip-count", text: String(counts[cat] || 0) })
-              ]);
-            })
-          ),
           el("div", { class: "subfilters" }, [
             el("div", { class: "status-chips" },
               STATUS_FILTERS.map((sf) =>
@@ -4139,7 +4147,7 @@
         });
 
         const versionTag = el("p", { class: "version-tag", text: APP_VERSION });
-        appEl.replaceChildren(hero, controls, listContainer, footer, versionTag);
+        appEl.replaceChildren(listTop, controls, listContainer, footer, versionTag);
       }
 
       function fillResultsArea(container, final) {
@@ -4164,7 +4172,12 @@
         }
 
         const grid = el("div", { class: "card-grid" },
-          final.map((d) => {
+          final.map((d) => sceneCard(d))
+        );
+        container.replaceChildren(grid);
+      }
+
+      function sceneCard(d) {
             const isStudied = Boolean(state.studied[d.date]);
             const isFav = Boolean(state.favorite[d.date]);
             const meta = CATEGORY_META[d.category] || { icon: "💬" };
@@ -4215,22 +4228,60 @@
               el("h2", { class: "card-title", text: d.title }),
               el("p", { class: "card-sub", text: d.subtitle })
             ]);
-          })
+      }
+
+      function syncCatsDynamic() {
+        const q = state.query.trim().toLowerCase();
+        const tiles = document.querySelector(".cat-grid");
+        const results = document.getElementById("main-results");
+        if (!tiles || !results) return;
+        const box = document.getElementById("main-search-box");
+        const wrap = box ? box.closest(".search-wrap") : null;
+        const clearBtn = wrap ? wrap.querySelector(".search-clear") : null;
+        tiles.style.display = q ? "none" : "";
+        results.style.display = q ? "" : "none";
+        if (clearBtn) clearBtn.style.display = q ? "" : "none";
+        if (!q) {
+          results.replaceChildren();
+          return;
+        }
+        const items = [...state.lessons].reverse().filter((d) => haystack(d).includes(q));
+        fillMainResults(results, items);
+      }
+
+      function fillMainResults(container, items) {
+        if (items.length === 0) {
+          container.replaceChildren(
+            el("div", { class: "empty-state" }, [
+              el("p", { text: "조건에 맞는 대화가 없어요." }),
+              el("button", {
+                type: "button",
+                class: "btn",
+                text: "검색어 지우기",
+                onClick: () => {
+                  state.query = "";
+                  const box = document.getElementById("main-search-box");
+                  if (box) { box.value = ""; box.focus(); }
+                  syncCatsDynamic();
+                }
+              })
+            ])
+          );
+          return;
+        }
+        const grid = el("div", { class: "card-grid" }, items.map((d) => sceneCard(d)));
+        container.replaceChildren(
+          el("p", { class: "result-meta", text: `${items.length}개 결과` }),
+          grid
         );
-        container.replaceChildren(grid);
       }
 
       function renderHomeResultsOnly() {
-        const { final, counts } = getFiltered();
+        const { final } = getFiltered();
         const area = document.getElementById("results-area");
         const meta = document.getElementById("result-meta");
         if (meta) meta.textContent = `${final.length}개 표시 중`;
         if (area) fillResultsArea(area, final);
-        document.querySelectorAll(".chips-row .chip").forEach((chip, i) => {
-          const cat = CATEGORIES[i];
-          const countEl = chip.querySelector(".chip-count");
-          if (countEl && cat) countEl.textContent = String(counts[cat] || 0);
-        });
       }
 
       function renderDetail(lesson) {
