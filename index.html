@@ -723,10 +723,17 @@
       background: var(--surface);
       color: var(--text-secondary);
       border-radius: 999px;
-      padding: 3px 11px;
-      font-size: 0.95rem;
-      line-height: 1.5;
+      padding: 5px 11px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1.4;
       cursor: pointer;
+    }
+
+    .copy-en-btn svg {
+      width: 15px;
+      height: 15px;
+      display: block;
     }
 
     .copy-en-btn:active {
@@ -1445,7 +1452,7 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
-      const APP_VERSION = "v53";
+      const APP_VERSION = "v54";
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
@@ -2636,6 +2643,18 @@
         return String(s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
       }
 
+      function lcsLen(a, b) {
+        let prev = new Array(b.length + 1).fill(0);
+        for (let i = 1; i <= a.length; i += 1) {
+          const cur = new Array(b.length + 1).fill(0);
+          for (let j = 1; j <= b.length; j += 1) {
+            cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+          }
+          prev = cur;
+        }
+        return prev[b.length];
+      }
+
       function joinTranscript(a, b) {
         const left = String(a || "").trim();
         const right = String(b || "").trim();
@@ -2661,6 +2680,16 @@
         let lead = 0;
         while (lead < lt.length && lead < rt.length && lt[lead] === rt[lead]) lead += 1;
         if (lead >= 4 && lead * 2 >= lt.length) {
+          return rt.length >= lt.length ? right : left;
+        }
+        // Duplicate take with ASR misheards: one read re-emitted after an engine
+        // restart ("my name is sora ... a local" + "my name is soda ... number").
+        // A single misheard token kills the exact/leading rules above. When the
+        // shorter chunk's words are mostly inside the longer one (5+ shared words
+        // in order, >= 70% of the shorter), it is the same sentence — keep the
+        // fuller take instead of concatenating.
+        const shared = lcsLen(lt, rt);
+        if (shared >= 5 && shared * 10 >= Math.min(lt.length, rt.length) * 7) {
           return rt.length >= lt.length ? right : left;
         }
         return left + " " + right;
@@ -2929,6 +2958,10 @@
 
       function speakerIcon() {
         return svgIcon("M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z");
+      }
+
+      function copyIcon() {
+        return svgIcon("M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z");
       }
 
       function stopIcon() {
@@ -4433,50 +4466,56 @@
           ])
         ]);
 
+        const copyBtnIcon = () => copyIcon();
         const chatHeading = el("h2", { class: "section-heading is-flex" }, [
           el("span", { text: "대화" }),
-          el("button", {
-            type: "button",
-            class: "copy-en-btn",
-            text: "📋",
-            "aria-label": "영어 대화문 복사",
-            title: "영어 대화문 복사",
-            onClick: (ev) => {
-              const btn = ev.currentTarget;
-              const text = lesson.dialogue.map((l) => l.text).join("\n");
-              const flash = (label) => {
-                btn.textContent = label;
-                setTimeout(() => {
-                  btn.textContent = "📋";
-                }, 1200);
-              };
-              const fallback = () => {
-                const ta = document.createElement("textarea");
-                ta.value = text;
-                ta.setAttribute("readonly", "");
-                ta.style.position = "fixed";
-                ta.style.top = "-1000px";
-                document.body.appendChild(ta);
-                ta.select();
-                let ok = false;
-                try {
-                  ok = document.execCommand("copy");
-                } catch (e) {
-                  ok = false;
+          el(
+            "button",
+            {
+              type: "button",
+              class: "copy-en-btn",
+              "aria-label": "영어 대화문 복사",
+              title: "영어 대화문 복사",
+              onClick: (ev) => {
+                const btn = ev.currentTarget;
+                const text = lesson.dialogue.map((l) => l.text).join("\n");
+                const restore = () => {
+                  btn.textContent = "";
+                  btn.appendChild(copyBtnIcon());
+                };
+                const flash = (label) => {
+                  btn.textContent = label;
+                  setTimeout(restore, 1200);
+                };
+                const fallback = () => {
+                  const ta = document.createElement("textarea");
+                  ta.value = text;
+                  ta.setAttribute("readonly", "");
+                  ta.style.position = "fixed";
+                  ta.style.top = "-1000px";
+                  document.body.appendChild(ta);
+                  ta.select();
+                  let ok = false;
+                  try {
+                    ok = document.execCommand("copy");
+                  } catch (e) {
+                    ok = false;
+                  }
+                  document.body.removeChild(ta);
+                  flash(ok ? "✓" : "실패");
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(text).then(
+                    () => flash("✓"),
+                    () => fallback()
+                  );
+                } else {
+                  fallback();
                 }
-                document.body.removeChild(ta);
-                flash(ok ? "✓" : "실패");
-              };
-              if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(
-                  () => flash("✓"),
-                  () => fallback()
-                );
-              } else {
-                fallback();
               }
-            }
-          })
+            },
+            [copyBtnIcon()]
+          )
         ]);
 
         const chatSection = el("section", { class: "section-card" }, [
