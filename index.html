@@ -1243,7 +1243,9 @@
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
-      const AI_VOICE_DATES = new Set(["2027-01-07", "2026-09-28", "2026-09-29", "2026-09-30"]);
+      const AI_VOICE_DATES = new Set(["2027-01-07",
+                                    "2026-09-28", "2026-09-29", "2026-09-30",
+                                    "2026-10-01", "2026-10-02", "2026-10-03"]);
       const CATEGORIES = ["전체", "공항", "호텔", "식당", "교통", "쇼핑", "긴급/병원", "기타"];
       const CATEGORY_META = {
         "공항": { icon: "✈️" },
@@ -1867,11 +1869,23 @@
         try { rec.stop(); } catch { finishBlob(); }
       }
 
+      function normSpeechText(s) {
+        return String(s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      }
+
       function joinTranscript(a, b) {
         const left = String(a || "").trim();
         const right = String(b || "").trim();
         if (!right) return left;
         if (!left) return right;
+        const nl = normSpeechText(left);
+        const nr = normSpeechText(right);
+        if (!nr) return left;
+        if (!nl) return right;
+        // Android Chrome restarts re-emit the same utterance with different
+        // casing/punctuation; compare normalized so the echo is deduped.
+        if (nl === nr || nl.endsWith(" " + nr)) return left;
+        if (nr === nl || nr.startsWith(nl + " ")) return right;
         if (left.endsWith(right)) return left;
         if (right.startsWith(left) && (right.length === left.length || right.charAt(left.length) === " ")) return right;
         return left + " " + right;
