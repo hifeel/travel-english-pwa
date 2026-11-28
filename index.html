@@ -181,6 +181,73 @@
       box-shadow: var(--shadow-sm);
     }
 
+    /* 분류 첫화면 */
+    .back-chip {
+      align-self: flex-start;
+      padding: 6px 13px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 0.86rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .back-chip:active { transform: scale(0.96); }
+
+    .cat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .cat-tile {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 18px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      font-family: inherit;
+      text-align: left;
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+    }
+
+    .cat-tile:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--border-strong);
+    }
+
+    .cat-tile:active { transform: scale(0.97); }
+
+    .cat-tile-icon { font-size: 1.7rem; line-height: 1; }
+
+    .cat-tile-name { font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+
+    .cat-tile-count { font-size: 0.82rem; color: var(--text-secondary); }
+
+    .cat-tile.is-all {
+      grid-column: 1 / -1;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px;
+    }
+
+    /* 마지막 분류 타일이 홀수 자리로 외로 남으면 전폭으로 채움 */
+    .cat-tile:nth-last-child(2):nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+
     .search-wrap {
       position: relative;
       display: flex;
@@ -1489,6 +1556,7 @@
         query: "",
         category: "전체",
         statusFilter: "all",
+        view: "cats",
         openDate: null,
         studied: saved.studied,
         favorite: saved.favorite,
@@ -3847,13 +3915,106 @@
         render();
       }
 
+      function renderCats() {
+        const studiedCount = Object.keys(state.studied).length;
+        const favCount = Object.keys(state.favorite).length;
+        const counts = {};
+        const doneCounts = {};
+        for (const d of state.lessons) {
+          counts[d.category] = (counts[d.category] || 0) + 1;
+          if (state.studied[d.date]) doneCounts[d.category] = (doneCounts[d.category] || 0) + 1;
+        }
+
+        const goList = (cat) => {
+          state.category = cat;
+          state.view = "list";
+          render();
+        };
+
+        const hero = el("header", { class: "hero" }, [
+          el("div", { class: "hero-top" }, [
+            el("h1", { text: "여행 영어 대화 모음" }),
+            state.installPrompt
+              ? el("button", {
+                  class: "install-btn",
+                  type: "button",
+                  text: "📲 앱 설치",
+                  onClick: async () => {
+                    const p = state.installPrompt;
+                    if (!p) return;
+                    p.prompt();
+                    await p.userChoice;
+                    state.installPrompt = null;
+                    render();
+                  }
+                })
+              : null
+          ]),
+          el("p", {
+            class: "hero-sub",
+            text: state.lessons.length
+              ? `${formatDotDate(state.lessons[0].date)} – ${formatDotDate(state.lessons[state.lessons.length - 1].date)} · 총 ${state.lessons.length}개 장면`
+              : "총 0개 장면"
+          }),
+          el("div", { class: "stats-row" }, [
+            el("span", { class: "stat-pill", text: `✓ 학습 완료 ${studiedCount}/${state.lessons.length}` }),
+            el("span", { class: "stat-pill", text: `★ 즐겨찾기 ${favCount}` }),
+            state.offlineReady
+              ? el("span", { class: "stat-pill is-offline", text: "● 오프라인 저장됨" })
+              : null
+          ])
+        ]);
+
+        const tiles = CATEGORIES.filter((c) => c !== "전체").map((cat) => {
+          const meta = CATEGORY_META[cat] || { icon: "💬" };
+          const total = counts[cat] || 0;
+          const dn = doneCounts[cat] || 0;
+          return el("button", {
+            type: "button",
+            class: "cat-tile",
+            "aria-label": `${cat} 분류 ${total}개`,
+            onClick: () => goList(cat)
+          }, [
+            el("span", { class: "cat-tile-icon", "aria-hidden": "true", text: meta.icon }),
+            el("span", { class: "cat-tile-name", text: cat }),
+            el("span", { class: "cat-tile-count", text: total ? (dn ? `${total}개 · 완료 ${dn}` : `${total}개`) : "곧 추가 예정" })
+          ]);
+        });
+        tiles.push(el("button", {
+          type: "button",
+          class: "cat-tile is-all",
+          onClick: () => goList("전체")
+        }, [
+          el("span", { class: "cat-tile-icon", "aria-hidden": "true", text: "🗂️" }),
+          el("span", { class: "cat-tile-name", text: `전체 대화 ${state.lessons.length}개 보기` })
+        ]));
+
+        const grid = el("section", { class: "cat-grid", "aria-label": "분류" }, tiles);
+        const footer = el("p", {
+          class: "footer-note",
+          text: "참고: 9월 20~27일 아침 대화와 초기 추가 대화 15개는 이전 채팅 기록을 불러올 수 없어 포함되지 않았습니다."
+        });
+        appEl.replaceChildren(hero, grid, footer);
+        window.scrollTo(0, 0);
+      }
+
       function renderHome() {
         const { final, counts } = getFiltered();
         const studiedCount = Object.keys(state.studied).length;
         const favCount = Object.keys(state.favorite).length;
 
         const hero = el("header", { class: "hero" }, [
-          el("div", { class: "hero-top" }, [
+          el("button", {
+            type: "button",
+            class: "back-chip",
+            text: "← 분류",
+            "aria-label": "분류 화면으로 돌아가기",
+            onClick: () => {
+              state.view = "cats";
+              render();
+            }
+          }),
+          el("div", { class: "hero-top" }, [ 
             el("h1", { text: "여행 영어 대화 모음" }),
             state.installPrompt
               ? el("button", {
@@ -4329,6 +4490,10 @@
         if (state.speaking) stopSpeech();
         stopMic({ silent: true, discard: true });
         if (state.fsOpen) closeFullscreen({ silent: true, keepHash: true });
+        if (state.view === "cats") {
+          renderCats();
+          return;
+        }
         renderHome();
       }
 
@@ -4411,6 +4576,7 @@
           state.lessons = await res.json();
           state.loading = false;
           syncFromLocation({ allowSession: true });
+          if (state.openDate) state.view = "list";
         } catch (err) {
           state.loading = false;
           state.error = err && err.message ? err.message : String(err);
