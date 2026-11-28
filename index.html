@@ -291,6 +291,13 @@
       border-color: var(--accent);
     }
 
+    .search-input::-webkit-search-cancel-button,
+    .search-input::-webkit-search-decoration {
+      -webkit-appearance: none;
+      appearance: none;
+      display: none;
+    }
+
     .search-clear {
       position: absolute;
       right: 8px;
@@ -1413,7 +1420,7 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
-      const APP_VERSION = "v51";
+      const APP_VERSION = "v52";
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
