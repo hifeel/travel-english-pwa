@@ -1288,10 +1288,107 @@
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
       const AI_VOICE_DATES = new Set(["2027-01-07",
-                                    "2026-09-28", "2026-09-29", "2026-09-30",
-                                    "2026-10-01", "2026-10-02", "2026-10-03",
-                                    "2026-10-04", "2026-10-05", "2026-10-06",
-        "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12"]);
+             "2026-09-28",
+             "2026-09-29",
+             "2026-09-30",
+             "2026-10-01",
+             "2026-10-02",
+             "2026-10-03",
+             "2026-10-04",
+             "2026-10-05",
+             "2026-10-06",
+             "2026-10-07",
+             "2026-10-08",
+             "2026-10-09",
+             "2026-10-10",
+             "2026-10-11",
+             "2026-10-12",
+             "2026-10-13",
+             "2026-10-14",
+             "2026-10-15",
+             "2026-10-16",
+             "2026-10-17",
+             "2026-10-18",
+             "2026-10-19",
+             "2026-10-20",
+             "2026-10-21",
+             "2026-10-22",
+             "2026-10-23",
+             "2026-10-24",
+             "2026-10-25",
+             "2026-10-26",
+             "2026-10-27",
+             "2026-10-28",
+             "2026-10-29",
+             "2026-10-30",
+             "2026-10-31",
+             "2026-11-01",
+             "2026-11-02",
+             "2026-11-03",
+             "2026-11-04",
+             "2026-11-05",
+             "2026-11-06",
+             "2026-11-07",
+             "2026-11-08",
+             "2026-11-09",
+             "2026-11-10",
+             "2026-11-11",
+             "2026-11-12",
+             "2026-11-13",
+             "2026-11-14",
+             "2026-11-15",
+             "2026-11-16",
+             "2026-11-17",
+             "2026-11-18",
+             "2026-11-19",
+             "2026-11-20",
+             "2026-11-21",
+             "2026-11-22",
+             "2026-11-23",
+             "2026-11-24",
+             "2026-11-25",
+             "2026-11-26",
+             "2026-11-27",
+             "2026-11-28",
+             "2026-11-29",
+             "2026-11-30",
+             "2026-12-01",
+             "2026-12-02",
+             "2026-12-03",
+             "2026-12-04",
+             "2026-12-05",
+             "2026-12-06",
+             "2026-12-07",
+             "2026-12-08",
+             "2026-12-09",
+             "2026-12-10",
+             "2026-12-11",
+             "2026-12-12",
+             "2026-12-13",
+             "2026-12-14",
+             "2026-12-15",
+             "2026-12-16",
+             "2026-12-17",
+             "2026-12-18",
+             "2026-12-19",
+             "2026-12-20",
+             "2026-12-21",
+             "2026-12-22",
+             "2026-12-23",
+             "2026-12-24",
+             "2026-12-25",
+             "2026-12-26",
+             "2026-12-27",
+             "2026-12-28",
+             "2026-12-29",
+             "2026-12-30",
+             "2026-12-31",
+             "2027-01-01",
+             "2027-01-02",
+             "2027-01-03",
+             "2027-01-04",
+             "2027-01-05",
+             "2027-01-06"]);
       const CATEGORIES = ["전체", "공항", "호텔", "식당", "교통", "쇼핑", "긴급/병원", "기타"];
       const CATEGORY_META = {
         "공항": { icon: "✈️" },
@@ -1515,26 +1612,43 @@
       function alignTokens(a, b) {
         const n = a.length, m = b.length;
         const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
-        for (let i = 0; i <= n; i++) dp[i][0] = i;
-        for (let j = 0; j <= m; j++) dp[0][j] = j;
+        const bp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(null));
+        for (let i = 0; i <= n; i++) { dp[i][0] = i; if (i) bp[i][0] = "del"; }
+        for (let j = 0; j <= m; j++) { dp[0][j] = j; if (j) bp[0][j] = "ins"; }
         for (let i = 1; i <= n; i++) {
           for (let j = 1; j <= m; j++) {
-            const cost = tokenEqual(a[i - 1], b[j - 1]) ? 0 : 1;
-            dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+            let best = dp[i - 1][j] + 1, how = "del";
+            if (dp[i][j - 1] + 1 < best) { best = dp[i][j - 1] + 1; how = "ins"; }
+            const c = dp[i - 1][j - 1] + (tokenEqual(a[i - 1], b[j - 1]) ? 0 : 1);
+            if (c < best) { best = c; how = "sub"; }
+            // one expected word heard as two words ("lunchtime" -> "lunch time")
+            if (j >= 2 && tokenEqual(a[i - 1], b[j - 2] + b[j - 1]) && dp[i - 1][j - 2] < best) { best = dp[i - 1][j - 2]; how = "merge"; }
+            // two expected words heard glued together ("lunch time" -> "lunchtime")
+            if (i >= 2 && tokenEqual(a[i - 2] + a[i - 1], b[j - 1]) && dp[i - 2][j - 1] < best) { best = dp[i - 2][j - 1]; how = "split"; }
+            dp[i][j] = best; bp[i][j] = how;
           }
         }
         const ops = [];
         let i = n, j = m;
         while (i > 0 || j > 0) {
-          if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + (tokenEqual(a[i - 1], b[j - 1]) ? 0 : 1)) {
+          const how = bp[i][j];
+          if (how === "sub") {
             ops.push({ type: tokenEqual(a[i - 1], b[j - 1]) ? "match" : "sub", a: a[i - 1], b: b[j - 1] });
             i--; j--;
-          } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+          } else if (how === "del") {
             ops.push({ type: "del", a: a[i - 1] });
             i--;
-          } else {
+          } else if (how === "ins") {
             ops.push({ type: "ins", b: b[j - 1] });
             j--;
+          } else if (how === "merge") {
+            ops.push({ type: "merge", a: a[i - 1], b: [b[j - 2], b[j - 1]] });
+            i--; j -= 2;
+          } else if (how === "split") {
+            ops.push({ type: "split", a: [a[i - 2], a[i - 1]], b: b[j - 1] });
+            i -= 2; j--;
+          } else {
+            break;
           }
         }
         ops.reverse();
@@ -1562,7 +1676,9 @@
           }
           if (op.type === "match") partHits[map[oi]].got += 1;
           else if (op.type === "sub") partHits[map[oi]].heard.push(op.b);
-          oi += 1;
+          else if (op.type === "merge") partHits[map[oi]].got += 1;
+          else if (op.type === "split") { partHits[map[oi]].got += 1; partHits[map[oi + 1]].got += 1; }
+          oi += op.type === "split" ? 2 : 1;
         }
         const words = parts.map((part, idx) => ({
           display: part.display,
