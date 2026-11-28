@@ -3452,7 +3452,7 @@
                   ? el("button", {
                   type: "button",
                   class: "btn btn-dual" + (state.dualVoice ? " is-on" : ""),
-                  text: state.dualVoice ? "👥 2인 음성" : "🔊 1인 음성",
+                  text: state.dualVoice ? "2인 음성" : "1인 음성",
                   "aria-label": "대화 음성 모드",
                   "aria-pressed": state.dualVoice ? "true" : "false",
                   title: state.dualVoice
@@ -3466,9 +3466,6 @@
                   render();
                   }
                   })
-                  : null,
-                  hasSpeech && state.dualVoice && (DUAL_VOICE_DATES.has(lesson.date) || AI_VOICE_DATES.has(lesson.date))
-                  ? el("span", { class: "dual-note", text: aiOnFor(lesson) ? "Adam♂ · Heart♀" : dualNoteText() })
                   : null
                   ]),
           el("div", { class: "toolbar-right toolbar-lang-row" }, [
