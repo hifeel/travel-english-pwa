@@ -1,4 +1,4 @@
-const CACHE_NAME = "travel-english-pwa-v38";
+const CACHE_NAME = "travel-english-pwa-v39";
 const CORE_ASSETS = [
   "./",
   "./index.html",
