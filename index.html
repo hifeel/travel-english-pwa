@@ -708,6 +708,31 @@
       color: var(--text);
     }
 
+    .section-heading.is-flex {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .copy-en-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      border-radius: 999px;
+      padding: 3px 11px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      cursor: pointer;
+    }
+
+    .copy-en-btn:active {
+      transform: scale(0.95);
+    }
+
     /* Chat bubbles */
     .chat-list {
       display: flex;
@@ -1420,7 +1445,7 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
-      const APP_VERSION = "v52";
+      const APP_VERSION = "v53";
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
@@ -4408,8 +4433,54 @@
           ])
         ]);
 
+        const chatHeading = el("h2", { class: "section-heading is-flex" }, [
+          el("span", { text: "대화" }),
+          el("button", {
+            type: "button",
+            class: "copy-en-btn",
+            text: "📋",
+            "aria-label": "영어 대화문 복사",
+            title: "영어 대화문 복사",
+            onClick: (ev) => {
+              const btn = ev.currentTarget;
+              const text = lesson.dialogue.map((l) => l.text).join("\n");
+              const flash = (label) => {
+                btn.textContent = label;
+                setTimeout(() => {
+                  btn.textContent = "📋";
+                }, 1200);
+              };
+              const fallback = () => {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.setAttribute("readonly", "");
+                ta.style.position = "fixed";
+                ta.style.top = "-1000px";
+                document.body.appendChild(ta);
+                ta.select();
+                let ok = false;
+                try {
+                  ok = document.execCommand("copy");
+                } catch (e) {
+                  ok = false;
+                }
+                document.body.removeChild(ta);
+                flash(ok ? "✓" : "실패");
+              };
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(
+                  () => flash("✓"),
+                  () => fallback()
+                );
+              } else {
+                fallback();
+              }
+            }
+          })
+        ]);
+
         const chatSection = el("section", { class: "section-card" }, [
-          el("h2", { class: "section-heading", text: "대화" }),
+          chatHeading,
           el("div", { class: "chat-list" },
             lesson.dialogue.map((line, i) => {
               const m = lesson.meaning[i];
