@@ -1452,7 +1452,7 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
-      const APP_VERSION = "v54";
+      const APP_VERSION = "v55";
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
@@ -4160,20 +4160,19 @@
           }
         });
 
-        const clearBtn = state.query
-          ? el("button", {
-              class: "search-clear",
-              type: "button",
-              "aria-label": "검색어 지우기",
-              text: "×",
-              onClick: () => {
-                state.query = "";
-                render();
-                const box = document.getElementById("search-box");
-                if (box) box.focus();
-              }
-            })
-          : null;
+        const clearBtn = el("button", {
+          class: "search-clear",
+          type: "button",
+          "aria-label": "검색어 지우기",
+          text: "×",
+          onClick: () => {
+            state.query = "";
+            searchInput.value = "";
+            renderHomeResultsOnly();
+            searchInput.focus();
+          }
+        });
+        if (!state.query.trim()) clearBtn.style.display = "none";
 
         const controls = el("section", { class: "controls" }, [
           el("div", { class: "search-wrap" }, [
@@ -4345,6 +4344,10 @@
         const { final } = getFiltered();
         const area = document.getElementById("results-area");
         const meta = document.getElementById("result-meta");
+        const box = document.getElementById("search-box");
+        const wrap = box ? box.closest(".search-wrap") : null;
+        const clearBtn = wrap ? wrap.querySelector(".search-clear") : null;
+        if (clearBtn) clearBtn.style.display = state.query.trim() ? "" : "none";
         if (meta) meta.textContent = `${final.length}개 표시 중`;
         if (area) fillResultsArea(area, final);
       }
