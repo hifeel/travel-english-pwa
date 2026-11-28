@@ -1244,7 +1244,6 @@
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
       const AI_VOICE_DATES = new Set(["2027-01-07"]);
-      const AI_VOICE_KEY = "travel-english" + "-pwa" + "-ai-voice";
       const CATEGORIES = ["전체", "공항", "호텔", "식당", "교통", "쇼핑", "긴급/병원", "기타"];
       const CATEGORY_META = {
         "공항": { icon: "✈️" },
@@ -1316,13 +1315,6 @@
           try {
             if (localStorage.getItem(DUAL_VOICE_KEY_LEGACY) === "1") return true;
             return localStorage.getItem(DUAL_VOICE_KEY) === "1";
-          } catch {
-            return false;
-          }
-        })(),
-        aiVoice: (() => {
-          try {
-            return localStorage.getItem(AI_VOICE_KEY) === "1";
           } catch {
             return false;
           }
@@ -2863,7 +2855,7 @@
 
       function dualOnFor(lesson) {
         if (!state.dualVoice || !lesson || !DUAL_VOICE_DATES.has(lesson.date)) return false;
-        if (state.aiVoice) return false;
+        if (AI_VOICE_DATES.has(lesson.date)) return false;
         const pair = roleVoices();
         return Boolean(pair[0]);
       }
@@ -2883,7 +2875,7 @@
       }
 
       function aiOnFor(lesson) {
-        return Boolean(state.aiVoice) && Boolean(lesson) && AI_VOICE_DATES.has(lesson.date);
+        return Boolean(state.dualVoice) && Boolean(lesson) && AI_VOICE_DATES.has(lesson.date);
       }
 
       function aiFileUrl(date, idx) {
@@ -3456,56 +3448,27 @@
                   }
                   })
                   : null,
-                  hasSpeech && DUAL_VOICE_DATES.has(lesson.date)
+                  hasSpeech && (DUAL_VOICE_DATES.has(lesson.date) || AI_VOICE_DATES.has(lesson.date))
                   ? el("button", {
                   type: "button",
                   class: "btn btn-dual" + (state.dualVoice ? " is-on" : ""),
-                  text: state.dualVoice ? "👥 2명 듣기" : "👤 1명 듣기",
+                  text: state.dualVoice ? "👥 2인 음성" : "🔊 1인 음성",
                   "aria-label": "대화 음성 모드",
                   "aria-pressed": state.dualVoice ? "true" : "false",
                   title: state.dualVoice
-                  ? "여행자/직원 서로 다른 음성으로 듣기 (켜짐)"
-                  : "여행자/직원 서로 다른 음성으로 듣기 (off)",
+                  ? "여행자=남자 · 직원=여자 다른 목소리 (켜짐)"
+                  : "한 목소리로 듣기",
                   onClick: () => {
                   stopSpeech();
                   state.dualVoice = !state.dualVoice;
                   saveDualVoice();
-                  if (state.dualVoice && state.aiVoice) {
-                    state.aiVoice = false;
-                    try { localStorage.setItem(AI_VOICE_KEY, "0"); } catch { /* ignore */ }
-                  }
                   if (state.dualVoice && window.__warmupVoices) window.__warmupVoices();
                   render();
                   }
                   })
                   : null,
-                  hasSpeech && DUAL_VOICE_DATES.has(lesson.date) && state.dualVoice && !state.aiVoice
-                  ? el("span", { class: "dual-note", text: dualNoteText() })
-                  : null,
-                  hasSpeech && AI_VOICE_DATES.has(lesson.date)
-                  ? el("button", {
-                  type: "button",
-                  class: "btn btn-dual" + (state.aiVoice ? " is-on" : ""),
-                  text: state.aiVoice ? "🎧 AI男女" : "🎧 AI음성",
-                  "aria-label": "AI 남녀 음성 모드",
-                  "aria-pressed": state.aiVoice ? "true" : "false",
-                  title: state.aiVoice
-                  ? "AI 남자/여자 음성으로 듣기 (켜짐)"
-                  : "AI 남자(여행자)/여자(직원) 음성으로 듣기 (off)",
-                  onClick: () => {
-                  stopSpeech();
-                  state.aiVoice = !state.aiVoice;
-                  if (state.aiVoice && state.dualVoice) {
-                    state.dualVoice = false;
-                    saveDualVoice();
-                  }
-                  try { localStorage.setItem(AI_VOICE_KEY, state.aiVoice ? "1" : "0"); } catch { /* ignore */ }
-                  render();
-                  }
-                  })
-                  : null,
-                  hasSpeech && AI_VOICE_DATES.has(lesson.date) && state.aiVoice
-                  ? el("span", { class: "dual-note", text: "Adam(남) · Heart(여)" })
+                  hasSpeech && state.dualVoice && (DUAL_VOICE_DATES.has(lesson.date) || AI_VOICE_DATES.has(lesson.date))
+                  ? el("span", { class: "dual-note", text: aiOnFor(lesson) ? "Adam♂ · Heart♀" : dualNoteText() })
                   : null
                   ]),
           el("div", { class: "toolbar-right toolbar-lang-row" }, [
