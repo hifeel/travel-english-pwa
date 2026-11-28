@@ -500,6 +500,14 @@
       font-size: 0.85rem;
     }
 
+    .version-tag {
+      margin-top: 14px;
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+    }
+
     /* Single-dialogue detail view */
     .detail-topbar {
       display: flex;
@@ -1392,6 +1400,7 @@
   <script>
     (() => {
       const STORAGE_KEY = "travel-english-pwa-v1";
+      const APP_VERSION = "v50";
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
@@ -3994,7 +4003,8 @@
           class: "footer-note",
           text: "참고: 9월 20~27일 아침 대화와 초기 추가 대화 15개는 이전 채팅 기록을 불러올 수 없어 포함되지 않았습니다."
         });
-        appEl.replaceChildren(hero, grid, footer);
+        const versionTag = el("p", { class: "version-tag", text: APP_VERSION });
+        appEl.replaceChildren(hero, grid, footer, versionTag);
         window.scrollTo(0, 0);
       }
 
@@ -4128,7 +4138,8 @@
           text: "참고: 9월 20~27일 아침 대화와 초기 추가 대화 15개는 이전 채팅 기록을 불러올 수 없어 포함되지 않았습니다."
         });
 
-        appEl.replaceChildren(hero, controls, listContainer, footer);
+        const versionTag = el("p", { class: "version-tag", text: APP_VERSION });
+        appEl.replaceChildren(hero, controls, listContainer, footer, versionTag);
       }
 
       function fillResultsArea(container, final) {
