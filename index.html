@@ -3765,6 +3765,16 @@
                 }
               });
             });
+            // A page already controlled by a service worker was served the cached
+            // build; when a newly deployed SW takes over, reload once so users get
+            // the fix without manual refresh (stale-SW report, 2026-11).
+            if (navigator.serviceWorker.controller) {
+              const prevCtrl = navigator.serviceWorker.controller;
+              navigator.serviceWorker.addEventListener("controllerchange", () => {
+                if (navigator.serviceWorker.controller !== prevCtrl) location.reload();
+              });
+            }
+            reg.update().catch(() => {});
           }).catch(() => {});
         });
       }
