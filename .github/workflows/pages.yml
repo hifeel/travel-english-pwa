@@ -26,7 +26,7 @@ jobs:
         run: |
           mkdir -p _site/data _site/icons _site/audio
           cp index.html manifest.webmanifest sw.js .nojekyll _site/
-          cp data/lessons.json _site/data/
+          cp data/lessons.json data/pronunciation.json _site/data/
           cp icons/* _site/icons/
           if [ -d audio ]; then cp -r audio/. _site/audio/; fi
       - uses: actions/upload-pages-artifact@v4
