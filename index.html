@@ -2313,6 +2313,18 @@
         if (nr === nl || nr.startsWith(nl + " ")) return right;
         if (left.endsWith(right)) return left;
         if (right.startsWith(left) && (right.length === left.length || right.charAt(left.length) === " ")) return right;
+        // Engine restart: the recognizer finalized a truncated chunk ("...around
+        // the"), then re-emitted the SAME sentence from the beginning ("I think in
+        // the restaurant around lunch time"). If right replays left's opening
+        // (4+ shared leading words, covering half of left), it is a duplicate
+        // take of one sentence — keep the fuller version, never concatenate.
+        const lt = nl.split(" ");
+        const rt = nr.split(" ");
+        let lead = 0;
+        while (lead < lt.length && lead < rt.length && lt[lead] === rt[lead]) lead += 1;
+        if (lead >= 4 && lead * 2 >= lt.length) {
+          return rt.length >= lt.length ? right : left;
+        }
         return left + " " + right;
       }
 
