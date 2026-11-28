@@ -830,6 +830,19 @@
       display: block;
     }
 
+    .mic-playback .mic-clear-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(234, 239, 247, 0.75);
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     .mic-play-btn.is-playing {
       border-color: var(--accent);
       color: var(--accent);
@@ -1480,13 +1493,18 @@
         micNotice: null,
         micResults: {},
         wordCoach: null,
-        micRecordings: {}
+        micRecordings: {},
+        plainNotice: null
       };
 
       const appEl = document.getElementById("app");
       const hasSpeech = typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
       const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
       const hasRecognition = typeof SpeechRecognitionAPI === "function";
+      const hasRecorder =
+        typeof window !== "undefined" &&
+        typeof MediaRecorder !== "undefined" &&
+        !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
       function el(tag, attrs = {}, children = []) {
         const node = document.createElement(tag);
@@ -1978,12 +1996,25 @@
         const result = state.micResults[key];
         const recording = state.micRecordings[key];
         const interim = listening ? state.micInterim : "";
+        const plain = plainActive && plainKey === key;
+        const plainNotice = state.plainNotice && state.plainNotice.key === key ? state.plainNotice.text : "";
         node.replaceChildren();
-        if (!listening && !notice && !result && !(recording && recording.url)) {
+        if (!listening && !plain && !notice && !plainNotice && !result && !(recording && recording.url)) {
           node.hidden = true;
           return;
         }
         node.hidden = false;
+        if (plain) {
+          const secs = Math.max(0, Math.min(PLAIN_MAX_MS, Date.now() - plainStartAt)) / 1000;
+          const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+          const ss = String(Math.floor(secs % 60)).padStart(2, "0");
+          node.appendChild(el("p", { class: "mic-listen-label", text: "⏺ 녹음 중… " + mm + ":" + ss }));
+          node.appendChild(el("p", { class: "mic-listen-hint", text: "말을 마친 뒤 녹음 버튼을 다시 누르면 바로듣기가 나타나요" }));
+          return;
+        }
+        if (plainNotice) {
+          node.appendChild(el("p", { class: "mic-notice", text: plainNotice }));
+        }
         if (listening) {
           node.appendChild(el("p", { class: "mic-listen-label", text: "듣는 중…" }));
           if (interim) node.appendChild(el("p", { class: "mic-live-text", text: interim }));
@@ -2036,7 +2067,7 @@
       }
 
       function micHost(key) {
-        if (!hasRecognition) return null;
+        if (!hasRecognition && !hasRecorder) return null;
         const node = el("div", { class: "mic-result", "data-mic-key": key });
         fillMicHost(node, key);
         return node;
@@ -2069,6 +2100,21 @@
           btn.setAttribute("aria-pressed", on ? "true" : "false");
           btn.setAttribute("aria-label", on ? "발음 확인 중지" : "발음 확인");
         });
+        document.querySelectorAll(".mic-rec-btn[data-rec-key]").forEach((btn) => {
+          const key = btn.getAttribute("data-rec-key");
+          const on = plainActive && plainKey === key;
+          btn.classList.toggle("is-listening", on);
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+          btn.setAttribute("aria-label", on ? "녹음 중지" : "내 목소리 녹음");
+          btn.setAttribute("title", on ? "탭하면 녹음이 끝나고 바로듣기가 나타나요" : "내 목소리 녹음 후 바로듣기");
+          btn.textContent = on ? "⏹ 녹음 중지" : "🔴 녹음";
+        });
+        if (fs.recBtn) {
+          const key = currentFsMicKey();
+          const on = !!(key && plainActive && plainKey === key);
+          fs.recBtn.classList.toggle("is-listening", on);
+          fs.recBtn.setAttribute("aria-pressed", on ? "true" : "false");
+        }
         if (fs.micBtn) {
           const key = currentFsMicKey();
           const on = state.micListening && key && state.micKey === key;
@@ -2117,6 +2163,18 @@
       let micAudio = null;
       let micPlayingKey = null;
 
+      let plainRec = null;
+      let plainStream = null;
+      let plainChunks = [];
+      let plainMime = "";
+      let plainKey = null;
+      let plainActive = false;
+      let plainSessionId = 0;
+      let plainStartAt = 0;
+      let plainCapTimer = 0;
+      let plainTickTimer = 0;
+      const PLAIN_MAX_MS = 30000;
+
       const HEADPHONE_ICON = "M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z";
 
       function canRecordDuringRecognition() {
@@ -2150,6 +2208,8 @@
       }
 
       function revokeAllMicRecordings() {
+        abandonPlainRec();
+        state.plainNotice = null;
         Object.keys(state.micRecordings || {}).forEach((key) => revokeMicRecording(key));
         state.micRecordings = {};
       }
@@ -2205,8 +2265,130 @@
         }
       }
 
+      function releasePlainStream() {
+        if (plainStream) {
+          plainStream.getTracks().forEach((t) => t.stop());
+          plainStream = null;
+        }
+      }
+
+      function clearPlainTimers() {
+        if (plainCapTimer) {
+          window.clearTimeout(plainCapTimer);
+          plainCapTimer = 0;
+        }
+        if (plainTickTimer) {
+          window.clearInterval(plainTickTimer);
+          plainTickTimer = 0;
+        }
+      }
+
+      function stopPlainRec(opts) {
+        clearPlainTimers();
+        if (opts && opts.discard) plainSessionId += 1;
+        plainActive = false;
+        if (plainRec) {
+          try {
+            if (plainRec.state !== "inactive") plainRec.stop();
+          } catch (err) {}
+        }
+        updateMicUI();
+      }
+
+      function abandonPlainRec() {
+        if (!plainActive && !plainRec && !plainStream) return;
+        stopPlainRec({ discard: true });
+        releasePlainStream();
+        plainRec = null;
+        plainKey = null;
+      }
+
+      function togglePlainRec(key) {
+        if (plainActive && plainKey === key) {
+          stopPlainRec();
+          return;
+        }
+        if (plainActive) stopPlainRec();
+        if (state.micListening) stopMic({ silent: true });
+        beginPlainRec(key);
+      }
+
+      function beginPlainRec(key) {
+        if (!hasRecorder) return;
+        if (state.speaking) {
+          stopSpeech();
+          updateSpeakingUI();
+        }
+        stopMicPlayback();
+        revokeMicRecording(key);
+        state.plainNotice = null;
+        plainSessionId += 1;
+        const session = plainSessionId;
+        plainKey = key;
+        plainActive = true;
+        plainChunks = [];
+        plainStartAt = Date.now();
+        updateMicUI();
+        navigator.mediaDevices
+          .getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          })
+          .then((stream) => {
+            if (session !== plainSessionId || !plainActive) {
+              stream.getTracks().forEach((t) => t.stop());
+              return;
+            }
+            plainStream = stream;
+            const mime = pickRecorderMime();
+            plainRec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+            plainMime = plainRec.mimeType || mime || "audio/webm";
+            plainRec.ondataavailable = (e) => {
+              if (e.data && e.data.size) plainChunks.push(e.data);
+            };
+            plainRec.onstop = () => {
+              releasePlainStream();
+              if (session !== plainSessionId) return;
+              plainRec = null;
+              const blob = new Blob(plainChunks, { type: plainMime });
+              plainChunks = [];
+              if (blob.size > 500) {
+                state.micRecordings[key] = {
+                  url: URL.createObjectURL(blob),
+                  mime: plainMime,
+                  dur: (Date.now() - plainStartAt) / 1000
+                };
+              } else {
+                state.plainNotice = { key, text: "녹음에 실패했어요. 마이크 권한을 확인해 주세요." };
+              }
+              updateMicUI();
+            };
+            plainRec.onerror = () => {
+              if (session !== plainSessionId) return;
+              state.plainNotice = { key, text: "녹음 중 문제가 있었어요. 다시 시도해 주세요." };
+              stopPlainRec({ discard: true });
+            };
+            plainRec.start();
+            plainCapTimer = window.setTimeout(() => {
+              plainCapTimer = 0;
+              if (session === plainSessionId && plainActive) stopPlainRec();
+            }, PLAIN_MAX_MS);
+            plainTickTimer = window.setInterval(() => {
+              if (session !== plainSessionId || !plainActive) return;
+              updateMicUI();
+            }, 1000);
+          })
+          .catch(() => {
+            if (session !== plainSessionId) return;
+            plainActive = false;
+            plainKey = null;
+            state.plainNotice = { key, text: "마이크 권한이 없어요. 브라우저 설정에서 마이크를 허용해 주세요." };
+            updateMicUI();
+          });
+      }
+
       function micPlaybackRow(key) {
         if (state.micListening && state.micKey === key) return null;
+        if (plainActive && plainKey === key) return null;
         const rec = state.micRecordings[key];
         const kids = [];
         if (rec && rec.url) {
@@ -2224,6 +2406,19 @@
             el("span", { class: "mic-play-icon" }, [svgIcon(HEADPHONE_ICON)]),
             el("span", { text: "내 목소리 듣기" })
           ]));
+          kids.push(el("button", {
+            type: "button",
+            class: "mic-clear-btn",
+            "aria-label": "녹음 삭제",
+            title: "녹음 삭제",
+            text: "지우기",
+            onClick: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              revokeMicRecording(key);
+              updateMicUI();
+            }
+          }));
         }
         if (!kids.length) return null;
         return el("div", { class: "mic-playback" }, kids);
@@ -2518,6 +2713,8 @@
           updateSpeakingUI();
         }
         stopMicPlayback();
+        if (plainActive) stopPlainRec();
+        if (state.plainNotice && state.plainNotice.key === key) state.plainNotice = null;
         micSessionId += 1;
         clearMicTimers();
         haltMicEngine();
@@ -3041,6 +3238,7 @@
         if (fs.playBtn) dockKids.push(fs.playBtn);
         dockKids.push(fsGoogleLink(card.en));
         if (fs.micBtn) dockKids.push(fs.micBtn);
+        if (fs.recBtn) dockKids.push(fs.recBtn);
         fs.actions.replaceChildren(...dockKids);
         setFsPlayIcon();
         updateMicUI();
@@ -3164,6 +3362,21 @@
                 e.stopPropagation();
                 const key = currentFsMicKey();
                 if (key) toggleMic(key);
+              }
+            }, [svgIcon("M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z")])
+          : null;
+        fs.recBtn = hasRecorder
+          ? el("button", {
+              type: "button",
+              class: "fs-dock-btn fs-dock-mic fs-dock-rec",
+              "aria-label": "내 목소리 녹음",
+              title: "내 목소리 녹음",
+              "aria-pressed": "false",
+              onClick: (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const key = currentFsMicKey();
+                if (key) togglePlainRec(key);
               }
             }, [svgIcon("M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z")])
           : null;
@@ -3412,6 +3625,24 @@
         if (!pair[0] || !pair[1]) return "음성 준비 중…";
         if (pair[0] === pair[1]) return first(pair[0]) + " (음성 1개)";
         return first(pair[0]) + " / " + first(pair[1]);
+      }
+
+      function recordButton(key) {
+        if (!hasRecorder) return null;
+        return el("button", {
+          type: "button",
+          class: "mini-btn mic-btn mic-rec-btn",
+          "data-rec-key": key,
+          "aria-label": "내 목소리 녹음",
+          "aria-pressed": "false",
+          title: "내 목소리 녹음 후 바로듣기",
+          text: "🔴 녹음",
+          onClick: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            togglePlainRec(key);
+          }
+        });
       }
 
       function speakSingle(text, voiceOverride, youFlag) {
@@ -3963,7 +4194,8 @@
                           })
                         : null,
                       googleStudyLink(line.text),
-                      micButton("line-" + i)
+                      micButton("line-" + i),
+                      recordButton("line-" + i)
                     ])
                   ]),
                   langText("p", "bubble-en", line.text, "en", "line-" + i),
@@ -3996,7 +4228,8 @@
                         })
                       : null,
                     googleStudyLink(item.en),
-                    micButton("expr-" + i)
+                    micButton("expr-" + i),
+                    recordButton("expr-" + i)
                   ])
                 ]),
                 micHost("expr-" + i)
@@ -4019,7 +4252,8 @@
                   })
                 : null,
               googleStudyLink(lesson.practice),
-              micButton("practice")
+              micButton("practice"),
+              recordButton("practice")
             ])
           ]),
           micHost("practice"),
