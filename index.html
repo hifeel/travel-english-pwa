@@ -2656,7 +2656,7 @@
               const lesson = currentOpenLesson();
               const cards = getFsCards(lesson);
               const card = cards[state.fsIndex];
-              if (card) speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn), isYou(card.speakerEn));
+              if (card) playFsCard(card);
             }
           }
         });
@@ -2696,7 +2696,7 @@
                   stopSpeech();
                   updateSpeakingUI();
                 } else {
-                  speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn), isYou(card.speakerEn));
+                  playFsCard(card);
                 }
               }
             })
