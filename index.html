@@ -1243,6 +1243,8 @@
       const DUAL_VOICE_KEY = "travel-english-pwa-dual-voice";
       const DUAL_VOICE_KEY_LEGACY = "travel-engl…oice";
       const DUAL_VOICE_DATES = new Set(["2027-01-07"]);
+      const AI_VOICE_DATES = new Set(["2027-01-07"]);
+      const AI_VOICE_KEY = "travel-english" + "-pwa" + "-ai-voice";
       const CATEGORIES = ["전체", "공항", "호텔", "식당", "교통", "쇼핑", "긴급/병원", "기타"];
       const CATEGORY_META = {
         "공항": { icon: "✈️" },
@@ -1314,6 +1316,13 @@
           try {
             if (localStorage.getItem(DUAL_VOICE_KEY_LEGACY) === "1") return true;
             return localStorage.getItem(DUAL_VOICE_KEY) === "1";
+          } catch {
+            return false;
+          }
+        })(),
+        aiVoice: (() => {
+          try {
+            return localStorage.getItem(AI_VOICE_KEY) === "1";
           } catch {
             return false;
           }
@@ -2281,6 +2290,7 @@
             speakerKo: m ? m.speaker : (isYou(line.speaker) ? "나" : "직원"),
             en: line.text,
             ko: m ? m.text : "",
+            lineIdx: i,
             key: "line-" + i
           });
         });
@@ -2342,7 +2352,13 @@
 
       function playFsCard(card) {
         if (!card) return;
-        if (hasSpeech && card.en) speakSingle(card.en, roleVoiceFor(currentOpenLesson(), card.speakerEn), isYou(card.speakerEn));
+        if (!hasSpeech || !card.en) return;
+        const lesson = currentOpenLesson();
+        if (aiOnFor(lesson) && Number.isFinite(card.lineIdx)) {
+          playAiLines(lesson, card.lineIdx, card.lineIdx + 1);
+          return;
+        }
+        speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn), isYou(card.speakerEn));
       }
 
       const fs = {
@@ -2427,8 +2443,12 @@
         const spoken = card.en;
         const roleVoice = roleVoiceFor(lesson, card.speakerEn);
         const roleIsYou = isYou(card.speakerEn);
+        const fsLineIdx = card.lineIdx;
+        const useAi = aiOnFor(lesson) && Number.isFinite(fsLineIdx);
         window.setTimeout(() => {
-          if (state.fsOpen && state.fsAutoplay && !state.speaking) speakSingle(spoken, roleVoice, roleIsYou);
+          if (!state.fsOpen || !state.fsAutoplay || state.speaking) return;
+          if (useAi) playAiLines(lesson, fsLineIdx, fsLineIdx + 1);
+          else speakSingle(spoken, roleVoice, roleIsYou);
         }, 80);
       }
 
@@ -2541,8 +2561,12 @@
           const spoken = cards[state.fsIndex].en;
           const roleVoice = roleVoiceFor(lesson, cards[state.fsIndex].speakerEn);
           const roleIsYou = isYou(cards[state.fsIndex].speakerEn);
+          const fsLineIdx = cards[state.fsIndex].lineIdx;
+          const useAi = aiOnFor(lesson) && Number.isFinite(fsLineIdx);
           window.setTimeout(() => {
-            if (state.fsOpen && state.fsAutoplay) speakSingle(spoken, roleVoice, roleIsYou);
+            if (!state.fsOpen || !state.fsAutoplay) return;
+            if (useAi) playAiLines(lesson, fsLineIdx, fsLineIdx + 1);
+            else speakSingle(spoken, roleVoice, roleIsYou);
           }, 280);
         }
       }
@@ -2787,7 +2811,15 @@
         ].join("\n").toLowerCase();
       }
 
+      let aiToken = 0;
+      let aiAudioEl = null;
+
       function stopSpeech() {
+        aiToken += 1;
+        if (aiAudioEl) {
+          try { aiAudioEl.pause(); } catch { /* ignore */ }
+          aiAudioEl = null;
+        }
         if (hasSpeech) {
           window.speechSynthesis.cancel();
         }
@@ -2831,6 +2863,7 @@
 
       function dualOnFor(lesson) {
         if (!state.dualVoice || !lesson || !DUAL_VOICE_DATES.has(lesson.date)) return false;
+        if (state.aiVoice) return false;
         const pair = roleVoices();
         return Boolean(pair[0]);
       }
@@ -2838,8 +2871,8 @@
       function rolePitch(isYouLine) {
         const pair = roleVoices();
         const distinct = Boolean(pair[0] && pair[1] && pair[0].name !== pair[1].name);
-        if (isYouLine) return distinct ? 1.12 : 1.3;
-        return distinct ? 0.9 : 0.72;
+        if (!distinct) return 1.0;
+        return isYouLine ? 1.12 : 0.9;
       }
 
       function roleVoiceFor(lesson, speaker) {
@@ -2847,6 +2880,61 @@
         if (!dualOnFor(lesson)) return null;
         const pair = roleVoices();
         return isYou(speaker) ? pair[0] : pair[1];
+      }
+
+      function aiOnFor(lesson) {
+        return Boolean(state.aiVoice) && Boolean(lesson) && AI_VOICE_DATES.has(lesson.date);
+      }
+
+      function aiFileUrl(date, idx) {
+        return "audio/" + date + "/" + (idx < 10 ? "0" : "") + idx + ".mp3";
+      }
+
+      function playAiLines(lesson, startIdx, endIdx) {
+        stopMic({ silent: true, discard: true });
+        stopMicPlayback();
+        stopSpeech();
+        const tok = ++aiToken;
+        let idx = startIdx;
+        state.speaking = true;
+        updateSpeakingUI();
+        const step = () => {
+          if (tok !== aiToken) return;
+          if (idx >= endIdx) {
+            state.speaking = false;
+            state.speakingLineIdx = -1;
+            aiAudioEl = null;
+            updateSpeakingUI();
+            return;
+          }
+          state.speakingLineIdx = idx;
+          updateSpeakingUI();
+          const from = idx;
+          const a = new Audio(aiFileUrl(lesson.date, idx));
+          a.playbackRate = RATES[state.rateIdx];
+          aiAudioEl = a;
+          const fallback = () => {
+            if (tok !== aiToken) return;
+            aiAudioEl = null;
+            state.speaking = false;
+            updateSpeakingUI();
+            speakDialogue(lesson.dialogue.slice(from, endIdx).map((l) => l.text), null, null);
+          };
+          a.onended = () => {
+            if (tok !== aiToken) return;
+            idx += 1;
+            if (idx < endIdx) window.setTimeout(step, 320);
+            else {
+              state.speaking = false;
+              state.speakingLineIdx = -1;
+              aiAudioEl = null;
+              updateSpeakingUI();
+            }
+          };
+          a.onerror = fallback;
+          a.play().catch(() => fallback());
+        };
+        step();
       }
 
       function saveDualVoice() {
@@ -2879,7 +2967,7 @@
         const pair = roleVoices();
         const first = (v) => ((v.name || "").split(" ")[0] || "en").trim();
         if (!pair[0] || !pair[1]) return "음성 준비 중…";
-        if (pair[0] === pair[1]) return first(pair[0]) + " 톤 분리 (음성 1개)";
+        if (pair[0] === pair[1]) return first(pair[0]) + " (음성 1개)";
         return first(pair[0]) + " / " + first(pair[1]);
       }
 
@@ -3338,11 +3426,22 @@
                   class: "btn btn-primary",
                   text: state.speaking ? "■ 중지" : "▶ 전체 듣기",
                   "aria-label": state.speaking ? "전체 듣기 중지" : "전체 듣기",
-                  onClick: () => speakDialogue(
-                    lesson.dialogue.map((l) => l.text),
-                    dualOnFor(lesson) ? lesson.dialogue.map((l) => roleVoiceFor(lesson, l.speaker)) : null,
-                    dualOnFor(lesson) ? lesson.dialogue.map((l) => isYou(l.speaker)) : null
-                  )
+                  onClick: () => {
+                    if (aiOnFor(lesson)) {
+                      if (state.speaking) {
+                        stopSpeech();
+                        updateSpeakingUI();
+                      } else {
+                        playAiLines(lesson, 0, lesson.dialogue.length);
+                      }
+                      return;
+                    }
+                    speakDialogue(
+                      lesson.dialogue.map((l) => l.text),
+                      dualOnFor(lesson) ? lesson.dialogue.map((l) => roleVoiceFor(lesson, l.speaker)) : null,
+                      dualOnFor(lesson) ? lesson.dialogue.map((l) => isYou(l.speaker)) : null
+                    );
+                  }
                 })
               : null,
             hasSpeech
@@ -3371,13 +3470,42 @@
                   stopSpeech();
                   state.dualVoice = !state.dualVoice;
                   saveDualVoice();
+                  if (state.dualVoice && state.aiVoice) {
+                    state.aiVoice = false;
+                    try { localStorage.setItem(AI_VOICE_KEY, "0"); } catch { /* ignore */ }
+                  }
                   if (state.dualVoice && window.__warmupVoices) window.__warmupVoices();
                   render();
                   }
                   })
                   : null,
-                  hasSpeech && DUAL_VOICE_DATES.has(lesson.date) && state.dualVoice
+                  hasSpeech && DUAL_VOICE_DATES.has(lesson.date) && state.dualVoice && !state.aiVoice
                   ? el("span", { class: "dual-note", text: dualNoteText() })
+                  : null,
+                  hasSpeech && AI_VOICE_DATES.has(lesson.date)
+                  ? el("button", {
+                  type: "button",
+                  class: "btn btn-dual" + (state.aiVoice ? " is-on" : ""),
+                  text: state.aiVoice ? "🎧 AI男女" : "🎧 AI음성",
+                  "aria-label": "AI 남녀 음성 모드",
+                  "aria-pressed": state.aiVoice ? "true" : "false",
+                  title: state.aiVoice
+                  ? "AI 남자/여자 음성으로 듣기 (켜짐)"
+                  : "AI 남자(여행자)/여자(직원) 음성으로 듣기 (off)",
+                  onClick: () => {
+                  stopSpeech();
+                  state.aiVoice = !state.aiVoice;
+                  if (state.aiVoice && state.dualVoice) {
+                    state.dualVoice = false;
+                    saveDualVoice();
+                  }
+                  try { localStorage.setItem(AI_VOICE_KEY, state.aiVoice ? "1" : "0"); } catch { /* ignore */ }
+                  render();
+                  }
+                  })
+                  : null,
+                  hasSpeech && AI_VOICE_DATES.has(lesson.date) && state.aiVoice
+                  ? el("span", { class: "dual-note", text: "Adam(남) · Heart(여)" })
                   : null
                   ]),
           el("div", { class: "toolbar-right toolbar-lang-row" }, [
@@ -3414,7 +3542,13 @@
                             type: "button",
                             class: "mini-btn",
                             text: "▶ 듣기",
-                            onClick: () => speakSingle(line.text, roleVoiceFor(lesson, line.speaker), isYou(line.speaker))
+                            onClick: () => {
+                              if (aiOnFor(lesson)) {
+                                playAiLines(lesson, i, i + 1);
+                                return;
+                              }
+                              speakSingle(line.text, roleVoiceFor(lesson, line.speaker), isYou(line.speaker));
+                            }
                           })
                         : null,
                       googleStudyLink(line.text),

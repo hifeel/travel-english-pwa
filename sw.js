@@ -1,4 +1,4 @@
-const CACHE_NAME = "travel-english-pwa-v29";
+const CACHE_NAME = "travel-english-pwa-v30";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,16 @@ const CORE_ASSETS = [
   "./icons/icon-512.png",
   "./icons/icon-maskable-192.png",
   "./icons/icon-maskable-512.png",
+  "./audio/2027-01-07/00.mp3",
+  "./audio/2027-01-07/01.mp3",
+  "./audio/2027-01-07/02.mp3",
+  "./audio/2027-01-07/03.mp3",
+  "./audio/2027-01-07/04.mp3",
+  "./audio/2027-01-07/05.mp3",
+  "./audio/2027-01-07/06.mp3",
+  "./audio/2027-01-07/07.mp3",
+  "./audio/2027-01-07/08.mp3",
+  "./audio/2027-01-07/09.mp3",
   "./icons/apple-touch-icon.png"
 ];
 
