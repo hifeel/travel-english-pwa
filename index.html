@@ -1254,6 +1254,24 @@
       color: var(--accent-text);
     }
 
+    .fs-dock-rec:not(.is-listening) svg {
+      color: #d32f2f;
+    }
+
+    .fs-dock-cell {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      flex: none;
+    }
+
+    .fs-dock-cap {
+      font-size: 11px;
+      line-height: 1.2;
+      color: var(--text-secondary);
+    }
+
     @media (max-width: 560px) {
       .toggle-btn.lang-toggle,
       .toggle-btn.icon-only {
@@ -1996,10 +2014,11 @@
         const result = state.micResults[key];
         const recording = state.micRecordings[key];
         const interim = listening ? state.micInterim : "";
-        const plain = plainActive && plainKey === key;
-        const plainNotice = state.plainNotice && state.plainNotice.key === key ? state.plainNotice.text : "";
+        const isFs = node.getAttribute("data-fs") === "1";
+        const plain = isFs && plainActive && plainKey === key;
+        const plainNotice = isFs && state.plainNotice && state.plainNotice.key === key ? state.plainNotice.text : "";
         node.replaceChildren();
-        if (!listening && !plain && !notice && !plainNotice && !result && !(recording && recording.url)) {
+        if (!listening && !plain && !notice && !plainNotice && !result && !(isFs && recording && recording.url)) {
           node.hidden = true;
           return;
         }
@@ -2062,13 +2081,14 @@
             if (cw) node.appendChild(wordCoachNode(key, cw));
           }
         }
-        const playback = micPlaybackRow(key);
+        const playback = isFs ? micPlaybackRow(key) : null;
         if (playback) node.appendChild(playback);
       }
 
-      function micHost(key) {
+      function micHost(key, fsFlag) {
         if (!hasRecognition && !hasRecorder) return null;
         const node = el("div", { class: "mic-result", "data-mic-key": key });
+        if (fsFlag) node.setAttribute("data-fs", "1");
         fillMicHost(node, key);
         return node;
       }
@@ -2099,15 +2119,6 @@
           btn.classList.toggle("is-listening", on);
           btn.setAttribute("aria-pressed", on ? "true" : "false");
           btn.setAttribute("aria-label", on ? "발음 확인 중지" : "발음 확인");
-        });
-        document.querySelectorAll(".mic-rec-btn[data-rec-key]").forEach((btn) => {
-          const key = btn.getAttribute("data-rec-key");
-          const on = plainActive && plainKey === key;
-          btn.classList.toggle("is-listening", on);
-          btn.setAttribute("aria-pressed", on ? "true" : "false");
-          btn.setAttribute("aria-label", on ? "녹음 중지" : "내 목소리 녹음");
-          btn.setAttribute("title", on ? "탭하면 녹음이 끝나고 바로듣기가 나타나요" : "내 목소리 녹음 후 바로듣기");
-          btn.textContent = on ? "⏹ 녹음 중지" : "🔴 녹음";
         });
         if (fs.recBtn) {
           const key = currentFsMicKey();
@@ -2792,6 +2803,10 @@
         return svgIcon("M6 6h12v12H6z");
       }
 
+      function recordIcon() {
+        return svgIcon("M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-13c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z");
+      }
+
       function googleGIcon() {
         return svgIcon("M12 11v2.4h4.19c-.18 1.17-1.4 3.43-4.19 3.43-2.52 0-4.58-2.09-4.58-4.83S9.48 7.17 12 7.17c1.44 0 2.4.61 2.95 1.14l2.01-1.93C15.47 5.14 13.89 4.4 12 4.4 7.96 4.4 4.7 7.7 4.7 12s3.26 7.6 7.3 7.6c4.21 0 7-2.96 7-7.12 0-.48-.05-.84-.11-1.2H12z");
       }
@@ -2813,6 +2828,14 @@
           "aria-label": "구글 검색",
           title: "구글 검색"
         }, [googleGIcon()]);
+      }
+
+      function dockCell(node, caption) {
+        if (!node) return null;
+        return el("div", { class: "fs-dock-cell" }, [
+          node,
+          el("span", { class: "fs-dock-cap", text: caption })
+        ]);
       }
 
       function isLangVisible(kind, key) {
@@ -2972,7 +2995,7 @@
           label ? el("p", { class: "fs-speaker", text: label }) : null,
           langText("p", "fs-en", card.en, "en", card.key, { noToggle: true }),
           card.ko ? langText("p", "fs-ko", card.ko, "ko", card.key, { noToggle: true }) : null,
-          micHost(card.key)
+          micHost(card.key, true)
         ]);
       }
 
@@ -3235,10 +3258,9 @@
         fs.autoBtn.classList.toggle("is-on", state.fsAutoplay);
         fs.autoBtn.setAttribute("aria-pressed", state.fsAutoplay ? "true" : "false");
         const dockKids = [];
-        if (fs.playBtn) dockKids.push(fs.playBtn);
-        dockKids.push(fsGoogleLink(card.en));
-        if (fs.micBtn) dockKids.push(fs.micBtn);
-        if (fs.recBtn) dockKids.push(fs.recBtn);
+        if (fs.playBtn) dockKids.push(dockCell(fs.playBtn, "듣기"));
+        dockKids.push(dockCell(fsGoogleLink(card.en), "검색"));
+        if (fs.recBtn) dockKids.push(dockCell(fs.recBtn, "녹음"));
         fs.actions.replaceChildren(...dockKids);
         setFsPlayIcon();
         updateMicUI();
@@ -3350,25 +3372,11 @@
               }
             })
           : null;
-        fs.micBtn = hasRecognition
-          ? el("button", {
-              type: "button",
-              class: "fs-dock-btn fs-dock-mic",
-              "aria-label": "발음 확인",
-              title: "발음 확인",
-              "aria-pressed": "false",
-              onClick: (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const key = currentFsMicKey();
-                if (key) toggleMic(key);
-              }
-            }, [svgIcon("M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z")])
-          : null;
+        fs.micBtn = null;
         fs.recBtn = hasRecorder
           ? el("button", {
               type: "button",
-              class: "fs-dock-btn fs-dock-mic fs-dock-rec",
+              class: "fs-dock-btn fs-dock-rec",
               "aria-label": "내 목소리 녹음",
               title: "내 목소리 녹음",
               "aria-pressed": "false",
@@ -3378,7 +3386,7 @@
                 const key = currentFsMicKey();
                 if (key) togglePlainRec(key);
               }
-            }, [svgIcon("M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z")])
+            }, [recordIcon()])
           : null;
         fs.actions = el("div", { class: "fs-actions" });
         const bottom = el("div", { class: "fs-bottom" }, [
@@ -3625,24 +3633,6 @@
         if (!pair[0] || !pair[1]) return "음성 준비 중…";
         if (pair[0] === pair[1]) return first(pair[0]) + " (음성 1개)";
         return first(pair[0]) + " / " + first(pair[1]);
-      }
-
-      function recordButton(key) {
-        if (!hasRecorder) return null;
-        return el("button", {
-          type: "button",
-          class: "mini-btn mic-btn mic-rec-btn",
-          "data-rec-key": key,
-          "aria-label": "내 목소리 녹음",
-          "aria-pressed": "false",
-          title: "내 목소리 녹음 후 바로듣기",
-          text: "🔴 녹음",
-          onClick: (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            togglePlainRec(key);
-          }
-        });
       }
 
       function speakSingle(text, voiceOverride, youFlag) {
@@ -4194,8 +4184,7 @@
                           })
                         : null,
                       googleStudyLink(line.text),
-                      micButton("line-" + i),
-                      recordButton("line-" + i)
+                      micButton("line-" + i)
                     ])
                   ]),
                   langText("p", "bubble-en", line.text, "en", "line-" + i),
@@ -4228,8 +4217,7 @@
                         })
                       : null,
                     googleStudyLink(item.en),
-                    micButton("expr-" + i),
-                    recordButton("expr-" + i)
+                    micButton("expr-" + i)
                   ])
                 ]),
                 micHost("expr-" + i)
@@ -4252,8 +4240,7 @@
                   })
                 : null,
               googleStudyLink(lesson.practice),
-              micButton("practice"),
-              recordButton("practice")
+              micButton("practice")
             ])
           ]),
           micHost("practice"),
