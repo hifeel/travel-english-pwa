@@ -2342,7 +2342,7 @@
 
       function playFsCard(card) {
         if (!card) return;
-        if (hasSpeech && card.en) speakSingle(card.en, roleVoiceFor(currentOpenLesson(), card.speakerEn));
+        if (hasSpeech && card.en) speakSingle(card.en, roleVoiceFor(currentOpenLesson(), card.speakerEn), isYou(card.speakerEn));
       }
 
       const fs = {
@@ -2426,8 +2426,9 @@
         if (!card || !card.en) return;
         const spoken = card.en;
         const roleVoice = roleVoiceFor(lesson, card.speakerEn);
+        const roleIsYou = isYou(card.speakerEn);
         window.setTimeout(() => {
-          if (state.fsOpen && state.fsAutoplay && !state.speaking) speakSingle(spoken, roleVoice);
+          if (state.fsOpen && state.fsAutoplay && !state.speaking) speakSingle(spoken, roleVoice, roleIsYou);
         }, 80);
       }
 
@@ -2539,8 +2540,9 @@
         if (state.fsAutoplay && hasSpeech && !state.micListening) {
           const spoken = cards[state.fsIndex].en;
           const roleVoice = roleVoiceFor(lesson, cards[state.fsIndex].speakerEn);
+          const roleIsYou = isYou(cards[state.fsIndex].speakerEn);
           window.setTimeout(() => {
-            if (state.fsOpen && state.fsAutoplay) speakSingle(spoken, roleVoice);
+            if (state.fsOpen && state.fsAutoplay) speakSingle(spoken, roleVoice, roleIsYou);
           }, 280);
         }
       }
@@ -2638,7 +2640,7 @@
               const lesson = currentOpenLesson();
               const cards = getFsCards(lesson);
               const card = cards[state.fsIndex];
-              if (card) speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn));
+              if (card) speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn), isYou(card.speakerEn));
             }
           }
         });
@@ -2678,7 +2680,7 @@
                   stopSpeech();
                   updateSpeakingUI();
                 } else {
-                  speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn));
+                  speakSingle(card.en, roleVoiceFor(lesson, card.speakerEn), isYou(card.speakerEn));
                 }
               }
             })
@@ -2830,7 +2832,14 @@
       function dualOnFor(lesson) {
         if (!state.dualVoice || !lesson || !DUAL_VOICE_DATES.has(lesson.date)) return false;
         const pair = roleVoices();
-        return Boolean(pair[0] && pair[1] && pair[0] !== pair[1]);
+        return Boolean(pair[0]);
+      }
+
+      function rolePitch(isYouLine) {
+        const pair = roleVoices();
+        const distinct = Boolean(pair[0] && pair[1] && pair[0].name !== pair[1].name);
+        if (isYouLine) return distinct ? 1.12 : 1.3;
+        return distinct ? 0.9 : 0.72;
       }
 
       function roleVoiceFor(lesson, speaker) {
@@ -2868,13 +2877,13 @@
 
       function dualNoteText() {
         const pair = roleVoices();
-        if (!pair[0] || !pair[1]) return "음성 준비 중…";
-        if (pair[0] === pair[1]) return "이 브라우저는 영어 음성 1개만 사용 가능";
         const first = (v) => ((v.name || "").split(" ")[0] || "en").trim();
+        if (!pair[0] || !pair[1]) return "음성 준비 중…";
+        if (pair[0] === pair[1]) return first(pair[0]) + " 톤 분리 (음성 1개)";
         return first(pair[0]) + " / " + first(pair[1]);
       }
 
-      function speakSingle(text, voiceOverride) {
+      function speakSingle(text, voiceOverride, youFlag) {
         if (!hasSpeech) return;
         stopMic({ silent: true, discard: true });
         stopMicPlayback();
@@ -2884,10 +2893,8 @@
         u.rate = RATES[state.rateIdx];
         const v = voiceOverride || pickVoice();
         if (v) u.voice = v;
-        if (voiceOverride) {
-          const pair = roleVoices();
-          if (pair[0] && voiceOverride.name === pair[0].name) u.pitch = 1.12;
-          else if (pair[1] && voiceOverride.name === pair[1].name) u.pitch = 0.9;
+        if (voiceOverride && youFlag !== undefined && youFlag !== null) {
+          u.pitch = rolePitch(Boolean(youFlag));
         }
         u.onend = () => {
           state.speaking = false;
@@ -2904,7 +2911,7 @@
         updateSpeakingUI();
       }
 
-      function speakDialogue(lines, voices) {
+      function speakDialogue(lines, voices, youFlags) {
         if (!hasSpeech) return;
         if (state.speaking) {
           stopSpeech();
@@ -2915,7 +2922,6 @@
         stopSpeech();
         const voice = pickVoice();
         const rate = RATES[state.rateIdx];
-        const pair = voices ? roleVoices() : [null, null];
         state.speaking = true;
         let idx = 0;
 
@@ -2934,8 +2940,7 @@
           const roleVoice = voices && voices[idx] ? voices[idx] : null;
           if (roleVoice) {
             u.voice = roleVoice;
-            if (pair[0] && roleVoice.name === pair[0].name) u.pitch = 1.12;
-            else if (pair[1] && roleVoice.name === pair[1].name) u.pitch = 0.9;
+            u.pitch = rolePitch(Boolean(youFlags && youFlags[idx]));
           } else if (voice) u.voice = voice;
           u.onend = () => {
             idx += 1;
@@ -3335,7 +3340,8 @@
                   "aria-label": state.speaking ? "전체 듣기 중지" : "전체 듣기",
                   onClick: () => speakDialogue(
                     lesson.dialogue.map((l) => l.text),
-                    dualOnFor(lesson) ? lesson.dialogue.map((l) => roleVoiceFor(lesson, l.speaker)) : null
+                    dualOnFor(lesson) ? lesson.dialogue.map((l) => roleVoiceFor(lesson, l.speaker)) : null,
+                    dualOnFor(lesson) ? lesson.dialogue.map((l) => isYou(l.speaker)) : null
                   )
                 })
               : null,
@@ -3408,7 +3414,7 @@
                             type: "button",
                             class: "mini-btn",
                             text: "▶ 듣기",
-                            onClick: () => speakSingle(line.text, roleVoiceFor(lesson, line.speaker))
+                            onClick: () => speakSingle(line.text, roleVoiceFor(lesson, line.speaker), isYou(line.speaker))
                           })
                         : null,
                       googleStudyLink(line.text),
